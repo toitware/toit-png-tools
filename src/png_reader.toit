@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import binary show BIG_ENDIAN byte_swap_32
-import bitmap show *
 import bytes show Buffer
 import crypto.crc show *
 import host.file
@@ -149,13 +148,12 @@ class Png:
     palette_r_ = ByteArray (chunk.size / 3): chunk.data[it * 3]
     palette_g_ = ByteArray (chunk.size / 3): chunk.data[it * 3 + 1]
     palette_b_ = ByteArray (chunk.size / 3): chunk.data[it * 3 + 2]
-    palette_a_ = ByteArray (chunk.size / 3): 255
 
   handle_transparency chunk/Chunk:
     if color_type == COLOR_TYPE_GREYSCALE:
       value := BIG_ENDIAN.uint16 chunk.data 0
       r_transparent_ = value
-      if value < palette_a_.size:  // In case of 16 bit image.
+      if palette_a_:  // In case of 16 bit image.
         palette_a_[value] = 0
     else if color_type == COLOR_TYPE_TRUECOLOR:
       r_transparent_ = BIG_ENDIAN.uint16 chunk.data 0
@@ -168,27 +166,16 @@ class Png:
 
   ensure_greyscale_palette_:
     if not palette_r_:
-      if color_type == COLOR_TYPE_GREYSCALE or color_type == COLOR_TYPE_GREYSCALE_ALPHA:
-        if bit_depth == 1:
-          palette_r_ = ByteArray 2: it * 255
-          palette_g_ = ByteArray 2: it * 255
-          palette_b_ = ByteArray 2: it * 255
-          palette_a_ = ByteArray 2: 255
-        else if bit_depth == 2:
-          palette_r_ = ByteArray 4: it * 85
-          palette_g_ = ByteArray 4: it * 85
-          palette_b_ = ByteArray 4: it * 85
-          palette_a_ = ByteArray 4: 255
-        else if bit_depth == 4:
-          palette_r_ = ByteArray 16: it * 17
-          palette_g_ = ByteArray 16: it * 17
-          palette_b_ = ByteArray 16: it * 17
-          palette_a_ = ByteArray 16: 255
-        else:
-          palette_r_ = ByteArray 256: it
-          palette_g_ = ByteArray 256: it
-          palette_b_ = ByteArray 256: it
-          palette_a_ = ByteArray 256: 255
+      if color_type == COLOR_TYPE_INDEXED:
+        palette_a_ = ByteArray (1 << bit_depth): 255
+      else if color_type == COLOR_TYPE_GREYSCALE or color_type == COLOR_TYPE_GREYSCALE_ALPHA:
+        if bit_depth != 16:
+          factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit_depth]
+          size := 1 << bit_depth
+          palette_r_ = ByteArray size: it * factor
+          palette_g_ = ByteArray size: it * factor
+          palette_b_ = ByteArray size: it * factor
+          palette_a_ = ByteArray size: 255
 
   handle_image_data chunk/Chunk:
     decompressor_.write chunk.data
@@ -222,30 +209,30 @@ class Png:
         width.repeat:
           index := (line[it >> 3] >> (7 - (it & 7))) & 1
           image_data[image_data_position_++] = palette_r_[index]
-          image_data[image_data_position_++] = palette_r_[index]
-          image_data[image_data_position_++] = palette_r_[index]
+          image_data[image_data_position_++] = palette_g_[index]
+          image_data[image_data_position_++] = palette_b_[index]
           image_data[image_data_position_++] = palette_a_[index]
       else if bit_depth == 2:
         width.repeat:
-          index := (line[it >> 2] >> (6 - (it & 3) << 1)) & 3
+          index := (line[it >> 2] >> (6 - ((it & 3) << 1))) & 3
           image_data[image_data_position_++] = palette_r_[index]
-          image_data[image_data_position_++] = palette_r_[index]
-          image_data[image_data_position_++] = palette_r_[index]
+          image_data[image_data_position_++] = palette_g_[index]
+          image_data[image_data_position_++] = palette_b_[index]
           image_data[image_data_position_++] = palette_a_[index]
       else if bit_depth == 4:
         width.repeat:
-          index := (line[it >> 4] >> (4 - (it & 1) << 2)) & 0xf
+          index := (line[it >> 1] >> (4 - ((it & 1) << 2))) & 0xf
           image_data[image_data_position_++] = palette_r_[index]
-          image_data[image_data_position_++] = palette_r_[index]
-          image_data[image_data_position_++] = palette_r_[index]
+          image_data[image_data_position_++] = palette_g_[index]
+          image_data[image_data_position_++] = palette_b_[index]
           image_data[image_data_position_++] = palette_a_[index]
       else if bit_depth == 8:
         if color_type == COLOR_TYPE_INDEXED or color_type == COLOR_TYPE_GREYSCALE:
           width.repeat:
             index := line[it]
             image_data[image_data_position_++] = palette_r_[index]
-            image_data[image_data_position_++] = palette_r_[index]
-            image_data[image_data_position_++] = palette_r_[index]
+            image_data[image_data_position_++] = palette_g_[index]
+            image_data[image_data_position_++] = palette_b_[index]
             image_data[image_data_position_++] = palette_a_[index]
         else if color_type == COLOR_TYPE_GREYSCALE_ALPHA:
           width.repeat:
@@ -315,7 +302,7 @@ class Png:
       throw "Not enough image data"
 
   static paeth_ a/int b/int c/int -> int:
-    p := a + b + c
+    p := a + b - c
     pa := (p - a).abs
     pb := (p - b).abs
     pc := (p - c).abs
