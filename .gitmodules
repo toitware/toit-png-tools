@@ -1,0 +1,3 @@
+[submodule "tests/third_party/pngsuite"]
+	path = tests/third_party/pngsuite
+	url = https://github.com/lunapaint/pngsuite.git
