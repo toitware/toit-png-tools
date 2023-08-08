@@ -39,7 +39,6 @@ class Png:
   color_type/int
   compression_method/int
   filter_method/int
-  interlaced/bool
   pixels/ByteArray
   palette_r_/ByteArray? := null
   palette_g_/ByteArray? := null
@@ -86,7 +85,7 @@ class Png:
     color_type = ihdr.data[9]
     compression_method = ihdr.data[10]
     filter_method = ihdr.data[11]
-    interlaced = ihdr.data[12] == 1
+    if ihdr.data[12] != 0: throw "Interlaced images not supported"
     pixels = ByteArray width * height * 4
     decompressor_ = zlib.Decoder
     //////////////////////////////////////////////////
@@ -110,8 +109,6 @@ class Png:
         break
       else if chunk.name[0] & 0x20 == 0:
         throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
-      else:
-        print "Ignored chunk $chunk.name"
 
   process_bit_depth_ bit_depth/int color_type/int filter_method/int -> none:
     if filter_method != 0:
@@ -146,7 +143,7 @@ class Png:
 
   handle_palette chunk/Chunk:
     if color_type != COLOR_TYPE_INDEXED:
-      throw "Palette chunk for non-indexed image"
+      return  // Just a suggested palette.
     if chunk.size % 3 != 0:
       throw "Invalid palette size"
     palette_r_ = ByteArray (chunk.size / 3): chunk.data[it * 3]
