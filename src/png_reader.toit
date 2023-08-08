@@ -21,11 +21,11 @@ COLOR_TYPE_INDEXED ::= 3
 COLOR_TYPE_GREYSCALE_ALPHA ::= 4
 COLOR_TYPE_TRUECOLOR_ALPHA ::= 6
 
-FILTER_TYPE_NONE_ ::= 0
-FILTER_TYPE_SUB_ ::= 1
-FILTER_TYPE_UP_ ::= 2
-FILTER_TYPE_AVERAGE_ ::= 3
-FILTER_TYPE_PAETH_ ::= 4
+PREDICTOR_NONE_ ::= 0
+PREDICTOR_SUB_ ::= 1
+PREDICTOR_UP_ ::= 2
+PREDICTOR_AVERAGE_ ::= 3
+PREDICTOR_PAETH_ ::= 4
 
 class Png:
   filename/string?
@@ -186,23 +186,23 @@ class Png:
       data := reader.read_bytes (byte_width + 1)
       filter := data[0]
       line := data[1..]
-      if filter == FILTER_TYPE_SUB_:
+      if filter == PREDICTOR_SUB_:
         for i := lookbehind_offset; i < byte_width; i++:
           line[i] += line[i - lookbehind_offset]
-      else if filter == FILTER_TYPE_UP_:
+      else if filter == PREDICTOR_UP_:
         byte_width.repeat:
           line[it] += previous_line_[it]
-      else if filter == FILTER_TYPE_AVERAGE_:
+      else if filter == PREDICTOR_AVERAGE_:
         lookbehind_offset.repeat:
           line[it] += previous_line_[it] >> 1
         for i := lookbehind_offset; i < byte_width; i++:
           line[i] += (line[i - lookbehind_offset] + previous_line_[i]) >> 1
-      else if filter == FILTER_TYPE_PAETH_:
+      else if filter == PREDICTOR_PAETH_:
         lookbehind_offset.repeat:
           line[it] += paeth_ 0 previous_line_[it] 0
         for i := lookbehind_offset; i < byte_width; i++:
           line[i] += paeth_ line[i - lookbehind_offset] previous_line_[i] previous_line_[i - lookbehind_offset]
-      else if filter != FILTER_TYPE_NONE_:
+      else if filter != PREDICTOR_NONE_:
         throw "Unknown filter type: $filter"
       previous_line_ = line
       if bit_depth == 1:
