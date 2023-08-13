@@ -13,6 +13,8 @@ main args/List -> int:
         Scales PNG files without introducing anti-aliasing artefacts.
 
         Can only scale by integer reductions.
+
+        Always writes 32bits-per-pixel RGBA PNGs.
         """
       --options=[
           cli.OptionInt "reduction" --short-help="Factor to scale down" --default=4
