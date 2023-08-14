@@ -1,5 +1,9 @@
+// Copyright (C) 2023 Toitware ApS.
+// Use of this source code is governed by a Zero-Clause BSD license that can
+// be found in the EXAMPLES_LICENSE file.
+
 import expect show *
-import png_reader
+import png-reader
 import host.file
 import host.directory show *
 
@@ -15,21 +19,21 @@ class Pixel:
     if other is not Pixel: return false
     return other.r == r and other.g == g and other.b == b and other.a == a
 
-  hash_code -> int:
+  hash-code -> int:
     return r * 12361 + g * 5117 + b * 123 + a
 
-  approx_equal p/Pixel -> bool:
+  approx-equal p/Pixel -> bool:
     return (r - p.r).abs < 4 and (g - p.g).abs < 4 and (b - p.b).abs < 4 and (a - p.a).abs < 10
 
-  almost_equal p/Pixel -> bool:
+  almost-equal p/Pixel -> bool:
     // All transparent colors match.
     if a < 7 and p.a < 7: return true
     if a < 32:
       // Very transparent colors don't have to match as well.
-      color_match := (r - p.r).abs < 6 and (g - p.g).abs < 4 and (b - p.b).abs < 6
-      return color_match and (a - p.a).abs < 12
-    color_match := (r - p.r).abs < 2 and (g - p.g).abs < 2 and (b - p.b).abs < 2
-    return color_match and (a - p.a).abs < 6
+      color-match := (r - p.r).abs < 6 and (g - p.g).abs < 4 and (b - p.b).abs < 6
+      return color-match and (a - p.a).abs < 12
+    color-match := (r - p.r).abs < 2 and (g - p.g).abs < 2 and (b - p.b).abs < 2
+    return color-match and (a - p.a).abs < 6
 
   stringify:
     return "Pixel 0x$(%02x r) 0x$(%02x g) 0x$(%02x b) $a"
@@ -43,42 +47,42 @@ main:
   compress "/home/erik/Downloads/atom-scaled.png"
 
 compress filename -> none:
-  png := png_reader.Png.from_file filename
+  png := png-reader.Png.from-file filename
   print png
   map := {:}
-  for i := 0; i < png.image_data.size; i += 4:
+  for i := 0; i < png.image-data.size; i += 4:
     p := Pixel
-        png.image_data[i]
-        png.image_data[i + 1]
-        png.image_data[i + 2]
-        png.image_data[i + 3]
+        png.image-data[i]
+        png.image-data[i + 1]
+        png.image-data[i + 2]
+        png.image-data[i + 3]
     map.update --init=0 p: it + 1
 
   keys := map.keys
-  keys.sort --in_place: | a b |
+  keys.sort --in-place: | a b |
     map[b] - map[a]
 
-  unaccounted_counts := map.copy
+  unaccounted-counts := map.copy
   palette := {}
   keys.do: | pixel |
     count := map[pixel]
     if count >= (png.width * png.height) / 128:
       palette.add pixel
-      unaccounted_counts.remove pixel
+      unaccounted-counts.remove pixel
 
   palette.do: | pixel |
     print "$pixel: $map[pixel]"
 
   pairs := []
-  to_do := not_covered unaccounted_counts palette pairs
+  to-do := not-covered unaccounted-counts palette pairs
 
-  pair_candidates := {}
-  pair_candidates.add_all palette
+  pair-candidates := {}
+  pair-candidates.add-all palette
   palette.do: | pixel |
     p := Pixel pixel.r pixel.g pixel.b 0
-    pair_candidates.add p
+    pair-candidates.add p
 
-  pair_candidates.add_all [
+  pair-candidates.add-all [
       Pixel 0 0 0 255,
       Pixel 255 0 0 255,
       Pixel 0 255 0 255,
@@ -88,64 +92,64 @@ compress filename -> none:
       Pixel 0 255 255 255,
       Pixel 255 255 255 255,
       ]
-  print "pair_candidates.size: $pair_candidates.size"
+  print "pair_candidates.size: $pair-candidates.size"
 
   keys.do: | pixel |
-    if pair_candidates.size < 20 and unaccounted_counts.contains pixel:
-      pair_candidates.add pixel
+    if pair-candidates.size < 20 and unaccounted-counts.contains pixel:
+      pair-candidates.add pixel
 
   [0.995, 0.9999999].do: | closeness |
     print closeness
-    pair_candidates.do: | cand1 |
+    pair-candidates.do: | cand1 |
       if palette.size < 256:
-        pair_candidates.do: | cand2 |
+        pair-candidates.do: | cand2 |
           if cand1 != cand2:
-            perhaps_pairs := pairs.copy
-            perhaps_pairs.add [cand1, cand2]
-            perhaps_unaccounted := not_covered unaccounted_counts palette perhaps_pairs
-            if perhaps_unaccounted.to_float / to_do < closeness:
-              to_do = perhaps_unaccounted
+            perhaps-pairs := pairs.copy
+            perhaps-pairs.add [cand1, cand2]
+            perhaps-unaccounted := not-covered unaccounted-counts palette perhaps-pairs
+            if perhaps-unaccounted.to-float / to-do < closeness:
+              to-do = perhaps-unaccounted
               palette.add cand1
               palette.add cand2
-              pairs = perhaps_pairs
-              to_do = not_covered --remove_covered unaccounted_counts palette pairs
+              pairs = perhaps-pairs
+              to-do = not-covered --remove-covered unaccounted-counts palette pairs
 
   keys.do: | pixel |
-    if unaccounted_counts.contains pixel and unaccounted_counts[pixel] > 1:
-      if fuzzy_contains palette pixel:
-        unaccounted_counts.remove pixel
+    if unaccounted-counts.contains pixel and unaccounted-counts[pixel] > 1:
+      if fuzzy-contains palette pixel:
+        unaccounted-counts.remove pixel
       else if palette.size < 256:
         palette.add pixel
-        unaccounted_counts.remove pixel
+        unaccounted-counts.remove pixel
 
-  to_do = not_covered --remove_covered unaccounted_counts palette pairs
+  to-do = not-covered --remove-covered unaccounted-counts palette pairs
 
-  print "Palette size: $palette.size, unaccounted pixels: $to_do left $((to_do * 100 / (png.height * png.width)).to_int)%"
+  print "Palette size: $palette.size, unaccounted pixels: $to-do left $((to-do * 100 / (png.height * png.width)).to-int)%"
   print palette
   print pairs
 
   keys.do: | pixel |
-    if unaccounted_counts.contains pixel:
-      print "$pixel: $unaccounted_counts[pixel]"
+    if unaccounted-counts.contains pixel:
+      print "$pixel: $unaccounted-counts[pixel]"
 
-  palette_map := {:}
+  palette-map := {:}
   palette.do: | pixel |
-    palette_map[pixel] = palette_map.size
+    palette-map[pixel] = palette-map.size
 
-  off_edge := Pixel 0 0 0 0
-  List.chunk_up 0 png.height 16: | fy ty |
-    List.chunk_up 0 png.width 16: | fx tx |
-      pixels := List 256: off_edge
+  off-edge := Pixel 0 0 0 0
+  List.chunk-up 0 png.height 16: | fy ty |
+    List.chunk-up 0 png.width 16: | fx tx |
+      pixels := List 256: off-edge
       for y := fy; y < ty; y++:
         for x := fx; x < tx; x++:
           i := (y * png.width + x) * 4
           p := Pixel
-              png.image_data[i]
-              png.image_data[i + 1]
-              png.image_data[i + 2]
-              png.image_data[i + 3]
+              png.image-data[i]
+              png.image-data[i + 1]
+              png.image-data[i + 2]
+              png.image-data[i + 3]
           pixels[x - fx + (y - fy) * 16] = p
-      bytes := get_compressed_bytes pixels palette_map pairs
+      bytes := get-compressed-bytes pixels palette-map pairs
       print "$fx,$fy, compressed to $bytes.size: $bytes"
       current := pixels[0]
       count := 0
@@ -165,17 +169,17 @@ compress filename -> none:
 /**
 
 */
-not_covered --remove_covered=false color_counts/Map palette/Set pairs/List -> int:
+not-covered --remove-covered=false color-counts/Map palette/Set pairs/List -> int:
   total := 0
   covered := 0
-  palette_has_completely_transparent := palette.any: it.a == 0
+  palette-has-completely-transparent := palette.any: it.a == 0
   removed := []
-  color_counts.do: | pixel count |
+  color-counts.do: | pixel count |
     total += count
     if palette.contains pixel:
       covered += count
       removed.add pixel
-    else if pixel.a == 0 and palette_has_completely_transparent:
+    else if pixel.a == 0 and palette-has-completely-transparent:
       covered += count
       removed.add pixel
     else:
@@ -183,20 +187,20 @@ not_covered --remove_covered=false color_counts/Map palette/Set pairs/List -> in
       pairs.do:
         from := it[0]
         to := it[1]
-        if on_line from to pixel:
+        if on-line from to pixel:
           found = true
       if found:
         covered += count
         removed.add pixel
-  if remove_covered:
+  if remove-covered:
     removed.do: | pixel |
-      color_counts.remove pixel
+      color-counts.remove pixel
   return total - covered
 
-fuzzy_contains palette/Set p/Pixel -> bool:
+fuzzy-contains palette/Set p/Pixel -> bool:
   if palette.contains p: return true
   palette.do: | c |
-    if c.almost_equal p: return true
+    if c.almost-equal p: return true
   return false
 
 class Placement:
@@ -211,25 +215,25 @@ class Placement:
   distance -> int:
     return (from - to).abs
 
-  in_range -> bool:
+  in-range -> bool:
     return from - 1 <= p <= to + 1 or to - 1 <= p <= from + 1
 
   multiplier -> float:
-    return (p - from).to_float / (to - from)
+    return (p - from).to-float / (to - from)
 
-  similar_multiplier other_component/Placement -> bool:
-    if from == to == p or other_component.from == other_component.to == other_component.p: return true
+  similar-multiplier other-component/Placement -> bool:
+    if from == to == p or other-component.from == other-component.to == other-component.p: return true
     // Best placement for this component.
     m := multiplier
     //print "$from-$to $p $m"
     // Use the best placement on the other component.
-    other_result := (other_component.from + (other_component.to - other_component.from) * m).to_int
-    return (other_component.p - other_result).abs < 2
+    other-result := (other-component.from + (other-component.to - other-component.from) * m).to-int
+    return (other-component.p - other-result).abs < 2
 
-on_line from/Pixel to/Pixel p/Pixel -> bool:
-  return on_line from to p: null
+on-line from/Pixel to/Pixel p/Pixel -> bool:
+  return on-line from to p: null
 
-on_line from/Pixel to/Pixel p/Pixel [get_scale] -> bool:
+on-line from/Pixel to/Pixel p/Pixel [get-scale] -> bool:
   placements := [
     Placement from.r to.r p.r,
     Placement from.g to.g p.g,
@@ -237,12 +241,12 @@ on_line from/Pixel to/Pixel p/Pixel [get_scale] -> bool:
     Placement from.a to.a p.a,
     ]
   if from == to: return p == from
-  if (placements.any: not it.in_range): return false
+  if (placements.any: not it.in-range): return false
   // Biggest distance first.
-  placements.sort --in_place: | a b | b.distance - a.distance
+  placements.sort --in-place: | a b | b.distance - a.distance
   for i := 1; i < 4; i++:
-    if not placements[0].similar_multiplier placements[i]: return false
-  get_scale.call (placements[0].multiplier * 64.0).round
+    if not placements[0].similar-multiplier placements[i]: return false
+  get-scale.call (placements[0].multiplier * 64.0).round
   return true
 
 abstract class CompressionAction:
@@ -250,56 +254,56 @@ abstract class CompressionAction:
   fg/Pixel
   bg/Pixel
   last/Pixel
-  cumulative_bytes_used/int := 0
+  cumulative-bytes-used/int := 0
 
   // Rough equality used to cull actions.
   operator == other -> bool:
     if other is not CompressionAction: return false
-    return name == other.name and fg == other.fg and bg == other.bg and last == other.last and cumulative_bytes_used == other.cumulative_bytes_used
+    return name == other.name and fg == other.fg and bg == other.bg and last == other.last and cumulative-bytes-used == other.cumulative-bytes-used
 
-  hash_code -> int:
-    return fg.hash_code * 1000000 + bg.hash_code * 1000 + last.hash_code
+  hash-code -> int:
+    return fg.hash-code * 1000000 + bg.hash-code * 1000 + last.hash-code
 
   constructor .previous .fg .bg .last:
-    cumulative_bytes_used = bytes_used + (previous ? previous.cumulative_bytes_used : 0)
+    cumulative-bytes-used = bytes-used + (previous ? previous.cumulative-bytes-used : 0)
 
   abstract emit -> ByteArray
 
-  abstract bytes_used -> int
+  abstract bytes-used -> int
 
-  stringify: return "$(name)Action with $bytes_used bytes ($cumulative_bytes_used cumulative)"
+  stringify: return "$(name)Action with $bytes-used bytes ($cumulative-bytes-used cumulative)"
 
   abstract name -> string
 
   add palette/Map p/Pixel pairs/List?=null -> List:
-    if fg.almost_equal p:
+    if fg.almost-equal p:
       return [FgRepeatAction this]
-    if bg.almost_equal p:
+    if bg.almost-equal p:
       return [BgRepeatAction this]
     result := []
     if palette.contains p:
-      set_fg := SetFgAction this palette p
+      set-fg := SetFgAction this palette p
       result.add
-          FgRepeatAction set_fg
-      if set_fg.bytes_used == 2:  // TODO: This is a hack.
+          FgRepeatAction set-fg
+      if set-fg.bytes-used == 2:  // TODO: This is a hack.
         result.add
             SetFgAndEmitAction this palette p
-      set_bg := SetBgAction this palette p
+      set-bg := SetBgAction this palette p
       result.add
-          BgRepeatAction set_bg
+          BgRepeatAction set-bg
     else:
       palette.do: | pal |
-        if result.size == 0 and pal.almost_equal p:
-          set_fg := SetFgAction this palette pal
+        if result.size == 0 and pal.almost-equal p:
+          set-fg := SetFgAction this palette pal
           result.add
-              FgRepeatAction set_fg
-          if set_fg.bytes_used == 2:  // TODO: This is a hack.
+              FgRepeatAction set-fg
+          if set-fg.bytes-used == 2:  // TODO: This is a hack.
             result.add
                 SetFgAndEmitAction this palette pal
-          set_bg := SetBgAction this palette pal
+          set-bg := SetBgAction this palette pal
           result.add
-              BgRepeatAction set_bg
-    if p.almost_equal last:
+              BgRepeatAction set-bg
+    if p.almost-equal last:
       result.add
         LastRepeatAction this
     if result.size == 0:
@@ -307,20 +311,20 @@ abstract class CompressionAction:
         pairs.do:
           from := it[0]
           to := it[1]
-          add_mixes_ from to p this palette result
+          add-mixes_ from to p this palette result
     if result.size == 0:
       palette.do: | pal1 index1 |
         palette.do: | pal2 index2 |
-          add_mixes_ pal1 pal2 p this palette result
+          add-mixes_ pal1 pal2 p this palette result
     if result.size == 0:
       result.add
           LiteralAction this p
     return result
 
-add_mixes_ pal1/Pixel pal2/Pixel p/Pixel predecessor/CompressionAction palette/Map result/List -> none:
+add-mixes_ pal1/Pixel pal2/Pixel p/Pixel predecessor/CompressionAction palette/Map result/List -> none:
   fg := predecessor.fg
   bg := predecessor.bg
-  if pal1 != pal2 and on_line pal1 pal2 p:
+  if pal1 != pal2 and on-line pal1 pal2 p:
     if fg == pal2 or bg == pal1:
       // Swap
       temp := pal1
@@ -332,25 +336,25 @@ add_mixes_ pal1/Pixel pal2/Pixel p/Pixel predecessor/CompressionAction palette/M
           MixAction predecessor p
       else:
         // fg already right.
-        set_bg := SetBgAction predecessor palette pal2
+        set-bg := SetBgAction predecessor palette pal2
         result.add
-            MixAction set_bg p
+            MixAction set-bg p
     else if bg == pal2:
       assert: fg != pal1
-      set_fg := SetFgAction predecessor palette pal1
+      set-fg := SetFgAction predecessor palette pal1
       result.add
-          MixAction set_fg p
+          MixAction set-fg p
     else:
       // None match already.
-      set_fg := SetFgAction predecessor palette pal1
-      set_bg := SetBgAction set_fg palette pal2
+      set-fg := SetFgAction predecessor palette pal1
+      set-bg := SetBgAction set-fg palette pal2
       result.add
-          MixAction set_bg p
+          MixAction set-bg p
       // It might be better to swap fg and bg.
-      set_fg2 := SetFgAction predecessor palette pal2
-      set_bg2 := SetBgAction set_fg2 palette pal1
+      set-fg2 := SetFgAction predecessor palette pal2
+      set-bg2 := SetBgAction set-fg2 palette pal1
       result.add
-          MixAction set_bg2 p
+          MixAction set-bg2 p
 
 class InitialAction extends CompressionAction:
   name: return "Initial"
@@ -358,19 +362,19 @@ class InitialAction extends CompressionAction:
   constructor fg/Pixel bg/Pixel:
     super null fg bg fg
 
-  bytes_used := 0
+  bytes-used := 0
 
   emit -> ByteArray:
     return #[]
 
 class SetFgAction extends CompressionAction:
   name: return "SetFg"
-  bytes_used/int
+  bytes-used/int
   index_/int
 
   constructor previous/CompressionAction palette/Map fg/Pixel:
     index_ = palette[fg]
-    bytes_used = index_ < 32 ? 1 : 2
+    bytes-used = index_ < 32 ? 1 : 2
     super previous fg previous.bg previous.last
 
   emit -> ByteArray:
@@ -389,12 +393,12 @@ class SetFgAndEmitAction extends SetFgAction:
 
 class SetBgAction extends CompressionAction:
   name: return "SetBg"
-  bytes_used/int
+  bytes-used/int
   index_/int
 
   constructor previous/CompressionAction palette/Map bg/Pixel:
     index_ = palette[bg]
-    bytes_used = index_ < 32 ? 1 : 2
+    bytes-used = index_ < 32 ? 1 : 2
     super previous previous.fg bg previous.last
 
   emit -> ByteArray:
@@ -421,7 +425,7 @@ class FgRepeatAction extends CompressionAction:
       return #[repeats - 1]
     return #[31, repeats - 1]
 
-  bytes_used -> int:
+  bytes-used -> int:
     if repeats <= 31: return 1
     return 2
 
@@ -444,7 +448,7 @@ class BgRepeatAction extends CompressionAction:
       return #[32 + repeats - 1]
     return #[32 + 31, repeats - 1]
 
-  bytes_used -> int:
+  bytes-used -> int:
     if repeats <= 31: return 1
     return 2
 
@@ -454,13 +458,13 @@ class MixAction extends CompressionAction:
 
   constructor previous/CompressionAction p/Pixel:
     s := -1
-    on_line previous.fg previous.bg p: s = it
+    on-line previous.fg previous.bg p: s = it
     if s < 0: s = 0
     if s > 63: s = 63
     scale = s
     super previous previous.fg previous.bg p
 
-  bytes_used -> int:
+  bytes-used -> int:
     return 1
 
   emit -> ByteArray:
@@ -480,14 +484,14 @@ class LiteralAction extends CompressionAction:
       prev = previous
     super prev previous.fg previous.bg p
 
-  bytes_used -> int:
+  bytes-used -> int:
     groups := (pixels.size - 1) / 8 + 1
     return groups + pixels.size * 4
 
   emit -> ByteArray:
-    result := ByteArray bytes_used
+    result := ByteArray bytes-used
     pos := 0
-    List.chunk_up 0 pixels.size 8: | f t l |
+    List.chunk-up 0 pixels.size 8: | f t l |
       result[pos++] = 248 + l - 1
       for i := f; i < t; i++:
         p := pixels[i]
@@ -511,11 +515,11 @@ class LastRepeatAction extends CompressionAction:
       prev = previous
     super prev previous.fg previous.bg previous.last
 
-  bytes_used -> int:
+  bytes-used -> int:
     return repeats <= 7 ? 1 : 2
 
   emit -> ByteArray:
-    result := ByteArray bytes_used
+    result := ByteArray bytes-used
     if repeats <= 7:
       result[0] = 240 + repeats - 1
     else:
@@ -524,49 +528,49 @@ class LastRepeatAction extends CompressionAction:
     return result
 
 test:
-  test_almost_equal
-  test_placement
-  test_on_line
-  test_build_actions
-  test_chrome_logo
+  test-almost-equal
+  test-placement
+  test-on-line
+  test-build-actions
+  test-chrome-logo
 
-test_almost_equal:
+test-almost-equal:
   transparent := Pixel 0 0 0 0
   black := Pixel 0 0 0 255
   dark := Pixel 1 1 1 255
   white := Pixel 255 255 255 255
-  expect: transparent.almost_equal transparent
-  expect: not transparent.almost_equal black
-  expect: dark.almost_equal black
-  expect: not white.almost_equal black
+  expect: transparent.almost-equal transparent
+  expect: not transparent.almost-equal black
+  expect: dark.almost-equal black
+  expect: not white.almost-equal black
 
-test_placement:
+test-placement:
   r := Placement 0 100 30
   g := Placement 0 100 30
   // Same ratio.
-  expect: r.similar_multiplier g
+  expect: r.similar-multiplier g
   // Same ratio, opposite direction.
   g = Placement 100 0 70
-  expect: r.similar_multiplier g
+  expect: r.similar-multiplier g
   // Scaled down by 10.
   b := Placement 20 30 23
   // Scaled down by 10, opposite direction.
-  expect: r.similar_multiplier b
+  expect: r.similar-multiplier b
   a := Placement 30 20 27
-  expect: r.similar_multiplier a
+  expect: r.similar-multiplier a
   x := Placement 255 255 0
-  expect: not r.similar_multiplier x
+  expect: not r.similar-multiplier x
   y := Placement 128 128 129
-  expect: r.similar_multiplier y
+  expect: r.similar-multiplier y
 
-test_on_line:
-  expect: on_line (Pixel 0 0 0 0) (Pixel 0 0 0 0) (Pixel 0 0 0 0)
-  expect: on_line (Pixel 192 35 66 0) (Pixel 192 35 66 255) (Pixel 192 35 66 128)
-  expect: on_line (Pixel 192 35 66 0) (Pixel 192 35 67 255) (Pixel 192 35 66 128)
-  expect: on_line (Pixel 192 35 66 0) (Pixel 192 35 66 255) (Pixel 192 35 67 128)
+test-on-line:
+  expect: on-line (Pixel 0 0 0 0) (Pixel 0 0 0 0) (Pixel 0 0 0 0)
+  expect: on-line (Pixel 192 35 66 0) (Pixel 192 35 66 255) (Pixel 192 35 66 128)
+  expect: on-line (Pixel 192 35 66 0) (Pixel 192 35 67 255) (Pixel 192 35 66 128)
+  expect: on-line (Pixel 192 35 66 0) (Pixel 192 35 66 255) (Pixel 192 35 67 128)
 
-test_chrome_logo:
-  palette_list := [
+test-chrome-logo:
+  palette-list := [
       Pixel 0x00 0x00 0x00 0,
       Pixel 0xda 0x32 0x26 255,
       Pixel 0xfc 0xc7 0x2c 255,
@@ -610,10 +614,10 @@ test_chrome_logo:
       Pixel 0xfc 0xc6 0x29 241
       ]
 
-  palette_map := {:}
-  palette_list.do: palette_map[it] = palette_map.size
+  palette-map := {:}
+  palette-list.do: palette-map[it] = palette-map.size
 
-  mixing_pairs ::= [
+  mixing-pairs ::= [
       [Pixel 0x00 0x00 0x00 0, Pixel 0xff 0xff 0xff 255],
       [Pixel 0x00 0x00 0x00 0, Pixel 0x2c 0x9f 0x4b 255],
       [Pixel 0x00 0x00 0x00 0, Pixel 0x2b 0x9c 0x4a 255],
@@ -632,13 +636,13 @@ test_chrome_logo:
       [Pixel 0xff 0xff 0xff 0, Pixel 0x2b 0x9c 0x4a 255],
       ]
 
-  all_transparent := List 256: Pixel 0 0 0 0
-  compressed := get_compressed_bytes all_transparent palette_map mixing_pairs
-  expect_equals #[0x1f, 0xff] compressed
+  all-transparent := List 256: Pixel 0 0 0 0
+  compressed := get-compressed-bytes all-transparent palette-map mixing-pairs
+  expect-equals #[0x1f, 0xff] compressed
 
-  square_160_0 := (List 207: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xda 0x32 0x26 255) + (List 12: Pixel 0x00 0x00 0x00 0) + (List 4: Pixel 0xda 0x32 0x26 255) + (List 9: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xff 0x55 0x00 3) + (List 6: Pixel 0xda 0x32 0x26 255) + (List 7: Pixel 0x00 0x00 0x00 0) + (List 9: Pixel 0xda 0x32 0x26 255)
-  compressed = get_compressed_bytes square_160_0 palette_map mixing_pairs
-  expect_equals compressed #[
+  square-160-0 := (List 207: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xda 0x32 0x26 255) + (List 12: Pixel 0x00 0x00 0x00 0) + (List 4: Pixel 0xda 0x32 0x26 255) + (List 9: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xff 0x55 0x00 3) + (List 6: Pixel 0xda 0x32 0x26 255) + (List 7: Pixel 0x00 0x00 0x00 0) + (List 9: Pixel 0xda 0x32 0x26 255)
+  compressed = get-compressed-bytes square-160-0 palette-map mixing-pairs
+  expect-equals compressed #[
       0x1f,  // Wide repeat of fg.
       206,   // 207 repeats of fg.
       0x20,  // One repeat of bg, Pixel 0xda 0x32 0x26 255.
@@ -650,9 +654,9 @@ test_chrome_logo:
       0x28,  // 9 repeats of bg.
       ]
 
-  square_176_0 := (List 140: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xbf 0x40 0x40 4) + (List 3: Pixel 0xda 0x32 0x26 255) + (List 9: Pixel 0x00 0x00 0x00 0) + (List 7: Pixel 0xda 0x32 0x26 255) + (List 5: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xff 0x55 0x00 3) + (List 10 : Pixel 0xda 0x32 0x26 255) + (List 2: Pixel 0x00 0x00 0x00 0) + (List 78: Pixel 0xda 0x32 0x26 255)
-  compressed = get_compressed_bytes square_176_0 palette_map mixing_pairs
-  expect_equals #[
+  square-176-0 := (List 140: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xbf 0x40 0x40 4) + (List 3: Pixel 0xda 0x32 0x26 255) + (List 9: Pixel 0x00 0x00 0x00 0) + (List 7: Pixel 0xda 0x32 0x26 255) + (List 5: Pixel 0x00 0x00 0x00 0) + (List 1: Pixel 0xff 0x55 0x00 3) + (List 10 : Pixel 0xda 0x32 0x26 255) + (List 2: Pixel 0x00 0x00 0x00 0) + (List 78: Pixel 0xda 0x32 0x26 255)
+  compressed = get-compressed-bytes square-176-0 palette-map mixing-pairs
+  expect-equals #[
       0x1f,  // Wide repeat of fg.
       0x8c,  // 141 repeats of fg.
       0x22,  // Emit 3 pixels bg.
@@ -665,25 +669,25 @@ test_chrome_logo:
       0x4d,  // 78 repeats of bg.
       ] compressed
 
-test_build_actions:
+test-build-actions:
   palette := {:}
   transparent := Pixel 0 0 0 0
   black := Pixel 0 0 0 255
   white := Pixel 255 255 255 255
   red := Pixel 255 0 0 255
   cyan := Pixel 255 255 0 255
-  palette_pixels ::= [
+  palette-pixels ::= [
       transparent,
       black,
       white,
       red,
       cyan,
       ]
-  palette_pixels.do:
+  palette-pixels.do:
     palette[it] = palette.size
 
-  compressed := get_compressed_bytes palette_pixels palette
-  expect_equals compressed #[
+  compressed := get-compressed-bytes palette-pixels palette
+  expect-equals compressed #[
       0x00,  // One repeat of fg.
       0x20,  // One repeat of bg.
       0x82,  // Set fg to palette 2.
@@ -696,15 +700,15 @@ test_build_actions:
 
   // 2 one-byte pixels that match the initial fg and bg, then 3 that need us to
   // set the fg first.
-  expect_equals 8 compressed.size
+  expect-equals 8 compressed.size
 
   image := [
       red, cyan, red,
       ]
 
-  compressed = get_compressed_bytes image palette
+  compressed = get-compressed-bytes image palette
 
-  expect_equals compressed #[
+  expect-equals compressed #[
       0x83,  // Set fg to palette 3.
       0x00,  // One repeat of fg.
       0xa4,  // Set bg to palette 4.
@@ -717,9 +721,9 @@ test_build_actions:
       transparent, transparent, transparent, transparent,
       ]
 
-  compressed = get_compressed_bytes image palette
+  compressed = get-compressed-bytes image palette
 
-  expect_equals compressed #[
+  expect-equals compressed #[
       0x21,  // Two repeats of bg.
       0x82,  // Set fg to palette 2.
       0x01,  // Two repeats of fg.
@@ -730,18 +734,18 @@ test_build_actions:
 
   grey := Pixel 128 128 128 255
   image = [grey, grey, grey, grey]
-  compressed = get_compressed_bytes image palette
-  expect_equals compressed #[
+  compressed = get-compressed-bytes image palette
+  expect-equals compressed #[
       0x82,  // Set fg to palette 2 (white).
       0x60,  // One pixel of mixed fg and bg.
       0xf2,  // Three repeats of last pixel.
       ]
 
-  dark_grey := Pixel 64 64 64 255
-  light_grey := Pixel 192 192 192 255
-  image = [white, white, white, white, light_grey, grey, grey, grey, dark_grey, black, black, black, black]
-  compressed = get_compressed_bytes image palette
-  expect_equals compressed #[
+  dark-grey := Pixel 64 64 64 255
+  light-grey := Pixel 192 192 192 255
+  image = [white, white, white, white, light-grey, grey, grey, grey, dark-grey, black, black, black, black]
+  compressed = get-compressed-bytes image palette
+  expect-equals compressed #[
       0x82,  // Set fg to palette 2 (white).
       0x03,  // 4 repeats of fg.
       0x50,  // 1 pixel of mixed fg and bg.
@@ -751,10 +755,10 @@ test_build_actions:
       0x23,  // Four repeats of bg.
       ]
 
-  half_transparent := Pixel 0 0 0 128
-  image = [white, white, white, white, light_grey, grey, grey, grey, dark_grey, black, black, black, black, half_transparent, transparent, transparent, transparent, transparent]
-  compressed = get_compressed_bytes image palette
-  expect_equals compressed #[
+  half-transparent := Pixel 0 0 0 128
+  image = [white, white, white, white, light-grey, grey, grey, grey, dark-grey, black, black, black, black, half-transparent, transparent, transparent, transparent, transparent]
+  compressed = get-compressed-bytes image palette
+  expect-equals compressed #[
       0x82,  // Set fg to palette 2 (white).
       0x03,  // 4 repeats of fg.
       0x50,  // One pixel of mixed fg and bg.
@@ -767,19 +771,19 @@ test_build_actions:
       0x03,  // Four repeats of fg.
       ]
 
-  strange_color := Pixel 123 53 22 42
-  image = [black, black, strange_color, black, black]
-  compressed = get_compressed_bytes image palette
-  expect_equals compressed #[
+  strange-color := Pixel 123 53 22 42
+  image = [black, black, strange-color, black, black]
+  compressed = get-compressed-bytes image palette
+  expect-equals compressed #[
       0x21,  // Two repeats of bg.
       0xf8,  // One literal pixel.
       123, 53, 22, 42,  // The literal pixel.
       0x21,  // Two repeats of bg.
       ]
 
-  image = [black, black, strange_color, strange_color, black, black]
-  compressed = get_compressed_bytes image palette
-  expect_equals compressed #[
+  image = [black, black, strange-color, strange-color, black, black]
+  compressed = get-compressed-bytes image palette
+  expect-equals compressed #[
       0x21,  // Two repeats of bg.
       0xf8,  // One literal pixel.
       123, 53, 22, 42,  // The literal pixel.
@@ -787,52 +791,52 @@ test_build_actions:
       0x21,  // Two repeats of bg.
       ]
 
-  image = List 256: light_grey
-  compressed = get_compressed_bytes image palette
+  image = List 256: light-grey
+  compressed = get-compressed-bytes image palette
   print compressed
 
-get_compressed_bytes pixels/List palette/Map pairs/List?=null -> ByteArray:
-  best/CompressionAction? := get_best_chain pixels palette pairs
-  result := ByteArray best.cumulative_bytes_used
+get-compressed-bytes pixels/List palette/Map pairs/List?=null -> ByteArray:
+  best/CompressionAction? := get-best-chain pixels palette pairs
+  result := ByteArray best.cumulative-bytes-used
   pos := result.size
   while best:
-    pos -= best.bytes_used
+    pos -= best.bytes-used
     result.replace pos best.emit
     best = best.previous
   return result
 
-get_best_chain pixels/List palette/Map pairs/List?=null -> CompressionAction:
-  palette_pixels ::= palette.keys
-  root := InitialAction palette_pixels[0] palette_pixels[1]
+get-best-chain pixels/List palette/Map pairs/List?=null -> CompressionAction:
+  palette-pixels ::= palette.keys
+  root := InitialAction palette-pixels[0] palette-pixels[1]
   states := [root]
 
   pixels.do: | p/Pixel |
-    new_states := []
+    new-states := []
     states.do: | s/CompressionAction |
-      new_states.add_all
+      new-states.add-all
           s.add palette p pairs
-    states = new_states
+    states = new-states
     if states.size > 1000:
-      best_score := 100000000000
+      best-score := 100000000000
       states.do:
-        c := it.cumulative_bytes_used
-        if c < best_score: best_score = c
-      new_states.filter --in_place:
-        it.cumulative_bytes_used <= best_score + 8
-      states = new_states
+        c := it.cumulative-bytes-used
+        if c < best-score: best-score = c
+      new-states.filter --in-place:
+        it.cumulative-bytes-used <= best-score + 8
+      states = new-states
     if states.size > 1000:
       set := {}
-      set.add_all states
-      states = set.to_list
+      set.add-all states
+      states = set.to-list
 
   best := states[0]
   states.do:
-    if it.cumulative_bytes_used < best.cumulative_bytes_used:
+    if it.cumulative-bytes-used < best.cumulative-bytes-used:
       best = it
 
   return best
 
-do_print action/CompressionAction:
+do-print action/CompressionAction:
   if action.previous:
-    do_print action.previous
+    do-print action.previous
   print action
