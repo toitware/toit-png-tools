@@ -6,7 +6,7 @@ import binary show BIG-ENDIAN byte-swap-32
 import bytes show Buffer
 import crypto.crc show *
 import host.file
-import monitor show Latch
+import monitor show Signal
 import reader
 import zlib
 
@@ -49,7 +49,8 @@ class Png:
   pixel-width/int := 0  // Number of bits in a pixel.
   lookbehind-offset/int := 0  // How many byte to look back to get previous pixel.
   previous-line_/ByteArray? := null
-  decompressor_/zlib.Decoder
+  decompressor_/zlib.BufferingInflater
+  done/Signal := Signal
 
   stringify:
     color-type-string/string := ?
@@ -86,7 +87,7 @@ class Png:
     filter-method = ihdr.data[11]
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
     pixels = ByteArray width * height * 4
-    decompressor_ = zlib.Decoder
+    decompressor_ = zlib.BufferingInflater
     //////////////////////////////////////////////////
     ensure-greyscale-palette_
     process-bit-depth_ bit-depth color-type filter-method
@@ -105,6 +106,7 @@ class Png:
         if pos != bytes.size:
           throw "Trailing data after IEND" + (filename ? ": $filename" : "")
         decompressor_.close
+        done.wait
         break
       else if chunk.name[0] & 0x20 == 0:
         throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
@@ -178,14 +180,16 @@ class Png:
           palette-a_ = ByteArray size: 255
 
   handle-image-data chunk/Chunk:
-    decompressor_.write chunk.data
+    bytes-written := 0
+    while bytes-written != chunk.data.size:
+      bytes-written += decompressor_.write chunk.data[bytes-written..]
 
   write-image-data byte-width/int:
     reader := reader.BufferedReader decompressor_.reader
     while reader.can-ensure (byte-width + 1):
       data := reader.read-bytes (byte-width + 1)
       filter := data[0]
-      line := data[1..]
+      line := data.copy 1
       if filter == PREDICTOR-SUB_:
         for i := lookbehind-offset; i < byte-width; i++:
           line[i] += line[i - lookbehind-offset]
@@ -300,6 +304,7 @@ class Png:
             image-data[image-data-position_++] = a >> 8
     if image-data-position_ != image-data.size:
       throw "Not enough image data"
+    done.raise
 
   static paeth_ a/int b/int c/int -> int:
     p := a + b - c
