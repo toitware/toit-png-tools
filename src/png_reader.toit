@@ -6,7 +6,7 @@ import binary show BIG-ENDIAN byte-swap-32
 import bytes show Buffer
 import crypto.crc show *
 import host.file
-import monitor show Signal
+import monitor show Latch
 import reader
 import zlib
 
@@ -50,7 +50,7 @@ class Png:
   lookbehind-offset/int := 0  // How many byte to look back to get previous pixel.
   previous-line_/ByteArray? := null
   decompressor_/zlib.BufferingInflater
-  done/Signal := Signal
+  done/Latch := Latch
 
   stringify:
     color-type-string/string := ?
@@ -106,7 +106,7 @@ class Png:
         if pos != bytes.size:
           throw "Trailing data after IEND" + (filename ? ": $filename" : "")
         decompressor_.close
-        done.wait
+        done.get
         break
       else if chunk.name[0] & 0x20 == 0:
         throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
@@ -304,7 +304,7 @@ class Png:
             image-data[image-data-position_++] = a >> 8
     if image-data-position_ != image-data.size:
       throw "Not enough image data"
-    done.raise
+    done.set null
 
   static paeth_ a/int b/int c/int -> int:
     p := a + b - c
