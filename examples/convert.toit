@@ -44,7 +44,7 @@ class Pixel:
 
 main:
   test
-  compress "/home/erik/Downloads/atom-scaled.png"
+  compress "chrome.png"
 
 compress filename -> none:
   png := png-reader.Png.from-file filename
