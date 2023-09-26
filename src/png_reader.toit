@@ -49,7 +49,7 @@ class Png:
   pixel-width/int := 0  // Number of bits in a pixel.
   lookbehind-offset/int := 0  // How many byte to look back to get previous pixel.
   previous-line_/ByteArray? := null
-  decompressor_/zlib.BufferingInflater
+  decompressor_/zlib.Decoder
   done/Latch := Latch
 
   stringify:
@@ -87,7 +87,7 @@ class Png:
     filter-method = ihdr.data[11]
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
     pixels = ByteArray width * height * 4
-    decompressor_ = zlib.BufferingInflater
+    decompressor_ = zlib.Decoder
     //////////////////////////////////////////////////
     ensure-greyscale-palette_
     process-bit-depth_ bit-depth color-type filter-method
