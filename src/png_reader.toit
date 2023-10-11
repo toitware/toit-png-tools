@@ -38,7 +38,6 @@ class Png:
   color-type/int
   compression-method/int
   filter-method/int
-  pixels/ByteArray
   palette-r_/ByteArray? := null
   palette-g_/ByteArray? := null
   palette-b_/ByteArray? := null
@@ -47,7 +46,7 @@ class Png:
   g-transparent_/int? := null
   b-transparent_/int? := null
   pixel-width/int := 0  // Number of bits in a pixel.
-  lookbehind-offset/int := 0  // How many byte to look back to get previous pixel.
+  lookbehind-offset/int := 0  // How many bytes to look back to get previous pixel.
   previous-line_/ByteArray? := null
   decompressor_/zlib.Decoder
   done/Latch := Latch
@@ -73,6 +72,8 @@ class Png:
 
   constructor .bytes --.filename/string?=null:
     pos := HEADER_.size
+    if bytes.size < pos:
+      throw "File too small" + (filename ? ": $filename" : "")
     if bytes[0..pos] != HEADER_:
       throw "Invalid PNG header" + (filename ? ": $filename" : "")
     ihdr := Chunk bytes pos: pos = it
@@ -86,7 +87,6 @@ class Png:
     compression-method = ihdr.data[10]
     filter-method = ihdr.data[11]
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
-    pixels = ByteArray width * height * 4
     decompressor_ = zlib.Decoder
     //////////////////////////////////////////////////
     ensure-greyscale-palette_
