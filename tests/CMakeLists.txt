@@ -11,7 +11,7 @@ set(SLOW_TEST_TIMEOUT 200 CACHE STRING "The maximal amount of time each slow tes
 
 message("TPKG: ${TPKG_EXEC}")
 add_custom_target(
-  "install-pkgs"
+  "install-test-pkgs"
   COMMAND "${TPKG_EXEC}" install
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

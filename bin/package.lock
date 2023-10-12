@@ -1,0 +1,20 @@
+sdk: ^2.0.0-alpha.64
+prefixes:
+  cli: pkg-cli
+  host: pkg-host
+  png-reader: ..
+packages:
+  ..:
+    path: ..
+    prefixes:
+      host: pkg-host
+  pkg-cli:
+    url: github.com/toitlang/pkg-cli
+    name: cli
+    version: 1.2.0
+    hash: 0e2adab3ab434c597be60438ccf64008f703ad9c
+  pkg-host:
+    url: github.com/toitlang/pkg-host
+    name: host
+    version: 1.11.0
+    hash: 7e7df6ac70d98a02f232185add81a06cec0d77e8

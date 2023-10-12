@@ -4,12 +4,13 @@
 
 all: test
 
-.PHONY: build/host/CMakeCache.txt
+.PHONY: build/CMakeCache.txt
 build/CMakeCache.txt:
 	$(MAKE) rebuild-cmake
 
 install-pkgs: rebuild-cmake
 	(cd build && ninja install-pkgs)
+	(cd build && ninja install-test-pkgs)
 
 test: install-pkgs rebuild-cmake
 	(cd build && ninja check)

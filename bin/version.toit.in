@@ -1,0 +1,11 @@
+// Copyright (C) 2023 Toitware ApS. All rights reserved.
+
+/**
+This .toit file is automatically overwritten by the build system,
+based on the version.toit.in file.  It is ignored by git.
+*/
+
+/**
+The version of pngdiff.
+*/
+PNGDIFF_VERSION/string ::= "@GIT_VERSION@"
