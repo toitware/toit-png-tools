@@ -12,6 +12,7 @@ import host.pipe
 import monitor show Latch
 import reader show BufferedReader
 import png-reader show Png
+import png-reader.png-writer show PngWriter
 import zlib
 import .version
 
@@ -187,66 +188,6 @@ diff parsed -> none:
 
 /// Maps all non-zero bytes to the brightest possible value.
 MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
-
-class PngWriter:
-  stream_/any
-  compressor_/zlib.Encoder
-  done_/Latch
-
-  constructor .stream_ width/int height/int:
-    HEADER ::= #[0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n']
-    compressor_ = zlib.Encoder
-    done_ = Latch
-
-    write_ HEADER
-    ihdr := #[
-      0, 0, 0, 0,          // Width.
-      0, 0, 0, 0,          // Height.
-      8,                   // Bit depth.
-      6,                   // Color type is true color with alpha
-      0, 0, 0,
-    ]
-    BIG-ENDIAN.put-uint32 ihdr 0 width
-    BIG-ENDIAN.put-uint32 ihdr 4 height
-    write-chunk_ "IHDR" ihdr
-    task:: write-function
-
-  write-uncompressed data/ByteArray -> none:
-    compressor_.write data
-
-  close -> none:
-    compressor_.close
-    done_.get
-
-  static byte_swap_ ba/ByteArray -> ByteArray:
-    result := ba.copy
-    binary.byte_swap_32 result
-    return result
-
-  write-function:
-    while data := compressor_.reader.read:
-      write-chunk_ "IDAT" data
-    write-chunk_ "IEND" #[]
-    done_.set null
-
-  write-chunk_ name/string data/ByteArray -> none:
-    length := ByteArray 4
-    if name.size != 4: throw "invalid name"
-    BIG-ENDIAN.put-uint32 length 0 data.size
-    write_ length
-    write_ name
-    write_ data
-    crc := Crc32
-    crc.add name
-    crc.add data
-    write_
-      byte-swap_
-        crc.get
-
-  write_ byte-array -> none:
-    done := 0
-    while done != byte-array.size:
-      done += stream_.write byte-array[done..]
 
 slurp-file file-name/string --debug/bool -> Png:
   error := catch --unwind=debug:
