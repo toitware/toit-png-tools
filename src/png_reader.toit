@@ -47,8 +47,12 @@ class Png:
   pixel-width/int := 0  // Number of bits in a pixel.
   lookbehind-offset/int := 0  // How many bytes to look back to get previous pixel.
   previous-line_/ByteArray? := null
-  decompressor_/zlib.Decoder
+  decompressor_/zlib.CopyingInflater
   done/Latch := Latch
+  // A sequence of y-coordinates and file positions for uncompressed lines.
+  // The uncompressed data includes a filter byte for each line, which
+  // must always be 0 (no predictor).
+  uncompressed-line-offsets_ := []
 
   stringify:
     color-type-string/string := ?
@@ -82,13 +86,17 @@ class Png:
     compression-method = ihdr.data[10]
     filter-method = ihdr.data[11]
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
-    decompressor_ = zlib.Decoder
+    decompressor_ = zlib.CopyingInflater
     //////////////////////////////////////////////////
     ensure-greyscale-palette_
     process-bit-depth_ bit-depth color-type filter-method
     byte-width := (width * pixel-width + 7) / 8
     previous-line_ = ByteArray byte-width
     task:: write-image-data byte-width
+    if image-data-is-uncompressed_ bytes pos byte-width:
+      print "Uncompressed image data"
+    else:
+      uncompressed-line-offsets_ = []
     while true:
       chunk := Chunk bytes pos : pos = it
       if chunk.name == "PLTE":
@@ -105,6 +113,68 @@ class Png:
         break
       else if chunk.name[0] & 0x20 == 0:
         throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
+
+  /**
+  Check that the image data is uncompressed, meaning it is all literal
+    zlib blocks with no compression.  We need this to be able to access
+    the image data directly without decompressing it.
+  Image data in PNG is divided up into separate IDAT chunks, which are
+    independent of the zlib stream, and we also check that no line of image
+    data is split between two IDAT chunks.
+  The literal zlib blocks have a 16 bit size, so they cannot be more than 64k
+    large.  We check that no line of image data is split between two literal
+    blocks.
+  The PNG format specifies a predictor byte for each line of image data.
+    A non-trivial value for this makes the lines depend on each other and
+    we cannot access them independently, so we return false in this case.
+  */
+  image-data-is-uncompressed_ bytes/ByteArray pos/int byte-width/int -> bool:
+    y := 0
+    found-header := false
+    literal-bytes-left-in-block := 0
+    while true:
+      file-offset := 0
+      chunk := Chunk bytes pos: | position-after-chunk chunk-data-position |
+        pos = position-after-chunk
+        file-offset = chunk-data-position
+      if chunk.name == "IDAT":
+        chunk-pos := 0
+        // A chunk of zlib-encoded data.  Check to see if it's actually
+        // uncompressed data.
+        if not found-header:
+          chunk-pos += 2
+          found-header = true
+        while chunk-pos != chunk.size:
+          if chunk-pos > chunk.size:
+            return false  // Some zlib control bytes were chopped up.
+          if literal-bytes-left-in-block != 0:
+            // Record line position in PNG file.
+            uncompressed-line-offsets_.add y
+            uncompressed-line-offsets_.add (file-offset + chunk-pos)
+
+            next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
+            if next-part-of-block % (byte-width + 1) != 0:
+              return false  // Chunk boundary and line boundary don't match.
+            for i := 0; i < next-part-of-block; i += byte-width + 1:
+              if chunk.data[chunk-pos + i] != 0:
+                return false  // Non-trivial predictor byte.
+            y += next-part-of-block / (byte-width + 1)
+            literal-bytes-left-in-block -= next-part-of-block
+            chunk-pos += next-part-of-block
+          else:
+            // Next zlib block has a 3-bit intro.  If it's a literal block, the
+            // full size of the intro is 5 bytes.
+            block-bits := chunk.data[chunk_pos] & 7
+            if block-bits & 6 != 0:
+              return false  // Not uncompressed.
+            literal-bytes-left-in-block = BIG-ENDIAN.uint16 chunk.data (chunk-pos + 1)
+            if literal-bytes-left-in-block % (byte-width + 1) != 0:
+              // Zlib literal block size and line width don't match.
+              return false
+            chunk-pos += 5
+      else if chunk.name == "IEND":
+        return true
+      // Skip any other chunks.
 
   process-bit-depth_ bit-depth/int color-type/int filter-method/int -> none:
     if filter-method != 0:
@@ -326,4 +396,4 @@ class Chunk:
     calculated-checksum := crc32 byte-array[position + 4..position + 8 + size]
     if checksum != calculated-checksum:
       throw "Invalid checksum"
-    position-updater.call position + size + 12
+    position-updater.call (position + size + 12) (position + 8)
