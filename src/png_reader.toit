@@ -31,24 +31,25 @@ class Png:
   bytes/ByteArray
   width/int
   height/int
-  image-data/ByteArray
+  image-data/ByteArray? := null
   image-data-position_/int := 0
   bit-depth/int
   color-type/int
   compression-method/int
   filter-method/int
-  palette-r_/ByteArray? := null
-  palette-g_/ByteArray? := null
-  palette-b_/ByteArray? := null
+  palette/ByteArray? := null
+  saved-chunks/Map := {:}
   palette-a_/ByteArray? := null
   r-transparent_/int? := null
   g-transparent_/int? := null
   b-transparent_/int? := null
   pixel-width/int := 0  // Number of bits in a pixel.
+  byte-width/int := 0   // Number of bytes in a line.
   lookbehind-offset/int := 0  // How many bytes to look back to get previous pixel.
   previous-line_/ByteArray? := null
   decompressor_/zlib.CopyingInflater
   done/Latch := Latch
+  convert-to-rgba/bool
   // A sequence of y-coordinates and file positions for uncompressed lines.
   // The uncompressed data includes a filter byte for each line, which
   // must always be 0 (no predictor).
@@ -69,7 +70,7 @@ class Png:
       color-type-string = "truecolor with alpha"
     return "PNG, $(width)x$height, bit depth: $bit-depth, color type: $color-type-string"
 
-  constructor .bytes --.filename/string?=null:
+  constructor .bytes --.filename/string?=null --.convert-to-rgba/bool?=true:
     pos := HEADER_.size
     if bytes.size < pos:
       throw "File too small" + (filename ? ": $filename" : "")
@@ -80,7 +81,6 @@ class Png:
       throw "First chunk is not IHDR" + (filename ? ": $filename" : "")
     width = BIG-ENDIAN.uint32 ihdr.data 0
     height = BIG-ENDIAN.uint32 ihdr.data 4
-    image-data = ByteArray 4 * width * height
     bit-depth = ihdr.data[8]
     color-type = ihdr.data[9]
     compression-method = ihdr.data[10]
@@ -88,13 +88,16 @@ class Png:
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
     decompressor_ = zlib.CopyingInflater
     //////////////////////////////////////////////////
-    ensure-greyscale-palette_
     process-bit-depth_ bit-depth color-type filter-method
-    byte-width := (width * pixel-width + 7) / 8
+    byte-width = (width * pixel-width + 7) / 8
+    if convert-to-rgba:
+      image-data = ByteArray (4 * width * height)
+    else:
+      image-data = ByteArray (byte-width * height)
     previous-line_ = ByteArray byte-width
-    task:: write-image-data byte-width
-    if image-data-is-uncompressed_ bytes pos byte-width:
-      print "Uncompressed image data"
+    task:: write-image-data
+    if image-data-is-uncompressed_ bytes pos:
+      //print "Uncompressed image data"
     else:
       uncompressed-line-offsets_ = []
     while true:
@@ -104,6 +107,8 @@ class Png:
       else if chunk.name == "tRNS":
         handle-transparency chunk
       else if chunk.name == "IDAT":
+        ensure-alpha-palette_ (1 << bit-depth)
+        ensure-rgb-palette_ (1 << bit-depth)
         handle-image-data chunk
       else if chunk.name == "IEND":
         if pos != bytes.size:
@@ -128,7 +133,7 @@ class Png:
     A non-trivial value for this makes the lines depend on each other and
     we cannot access them independently, so we return false in this case.
   */
-  image-data-is-uncompressed_ bytes/ByteArray pos/int byte-width/int -> bool:
+  image-data-is-uncompressed_ bytes/ByteArray pos/int -> bool:
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
@@ -174,7 +179,8 @@ class Png:
             chunk-pos += 5
       else if chunk.name == "IEND":
         return true
-      // Skip any other chunks.
+      else:
+        // Skip unknown chunks at this stage.
 
   process-bit-depth_ bit-depth/int color-type/int filter-method/int -> none:
     if filter-method != 0:
@@ -208,48 +214,56 @@ class Png:
       lookbehind-offset = pixel-width / 8
 
   handle-palette chunk/Chunk:
+    saved-chunks[chunk.name] = chunk.data
     if color-type != COLOR-TYPE-INDEXED:
       return  // Just a suggested palette.
     if chunk.size % 3 != 0:
       throw "Invalid palette size"
-    palette-r_ = ByteArray (chunk.size / 3): chunk.data[it * 3]
-    palette-g_ = ByteArray (chunk.size / 3): chunk.data[it * 3 + 1]
-    palette-b_ = ByteArray (chunk.size / 3): chunk.data[it * 3 + 2]
+    palette = chunk.data
 
   handle-transparency chunk/Chunk:
+    saved-chunks[chunk.name] = chunk.data
     if color-type == COLOR-TYPE-GREYSCALE:
       value := BIG-ENDIAN.uint16 chunk.data 0
+      ensure-alpha-palette_ (value + 1)
       r-transparent_ = value
-      if palette-a_:  // In case of 16 bit image.
+      if palette-a_:  // Skip this for 16 bit image.
         palette-a_[value] = 0
     else if color-type == COLOR-TYPE-TRUECOLOR:
       r-transparent_ = BIG-ENDIAN.uint16 chunk.data 0
       g-transparent_ = BIG-ENDIAN.uint16 chunk.data 2
       b-transparent_ = BIG-ENDIAN.uint16 chunk.data 4
     else if color-type == COLOR-TYPE-INDEXED:
+      ensure-alpha-palette_ chunk.data.size
       palette-a_.replace 0 chunk.data
     else:
       throw "Transparency chunk for non-indexed image"
 
-  ensure-greyscale-palette_:
-    if not palette-r_:
+  ensure-alpha-palette_ min-size/int:
+    if bit-depth <= 8 and not palette-a_:
       if color-type == COLOR-TYPE-INDEXED:
-        palette-a_ = ByteArray (1 << bit-depth): 255
+        palette-a_ = ByteArray (max min-size (1 << bit-depth)): 255
       else if color-type == COLOR-TYPE-GREYSCALE or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
         if bit-depth != 16:
+          size := 1 << bit-depth
+          palette-a_ = ByteArray (max min-size size): 255
+
+  ensure-rgb-palette_ min-size/int:
+    if bit-depth <= 8 and not palette:
+      if color-type == COLOR-TYPE-INDEXED:
+        throw "No palette for indexed image"
+      else if color-type == COLOR-TYPE-GREYSCALE or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+        if bit-depth <= 4:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
-          palette-r_ = ByteArray size: it * factor
-          palette-g_ = ByteArray size: it * factor
-          palette-b_ = ByteArray size: it * factor
-          palette-a_ = ByteArray size: 255
+          palette = ByteArray (size * 3): (it / 3) * factor
 
   handle-image-data chunk/Chunk:
     bytes-written := 0
     while bytes-written != chunk.data.size:
       bytes-written += decompressor_.write chunk.data[bytes-written..]
 
-  write-image-data byte-width/int:
+  write-image-data:
     reader := reader.BufferedReader decompressor_.reader
     while reader.can-ensure (byte-width + 1):
       data := reader.read-bytes (byte-width + 1)
@@ -274,34 +288,41 @@ class Png:
       else if filter != PREDICTOR-NONE_:
         throw "Unknown filter type: $filter"
       previous-line_ = line
+      pal := palette or (ByteArray 768: it / 3)
+
+      if not convert-to-rgba:
+        image-data.replace image-data-position_ line
+        image-data-position_ += byte-width
+        continue
+
       if bit-depth == 1:
         width.repeat:
           index := (line[it >> 3] >> (7 - (it & 7))) & 1
-          image-data[image-data-position_++] = palette-r_[index]
-          image-data[image-data-position_++] = palette-g_[index]
-          image-data[image-data-position_++] = palette-b_[index]
+          image-data[image-data-position_++] = pal[index * 3 + 0]
+          image-data[image-data-position_++] = pal[index * 3 + 1]
+          image-data[image-data-position_++] = pal[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 2:
         width.repeat:
           index := (line[it >> 2] >> (6 - ((it & 3) << 1))) & 3
-          image-data[image-data-position_++] = palette-r_[index]
-          image-data[image-data-position_++] = palette-g_[index]
-          image-data[image-data-position_++] = palette-b_[index]
+          image-data[image-data-position_++] = pal[index * 3 + 0]
+          image-data[image-data-position_++] = pal[index * 3 + 1]
+          image-data[image-data-position_++] = pal[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 4:
         width.repeat:
           index := (line[it >> 1] >> (4 - ((it & 1) << 2))) & 0xf
-          image-data[image-data-position_++] = palette-r_[index]
-          image-data[image-data-position_++] = palette-g_[index]
-          image-data[image-data-position_++] = palette-b_[index]
+          image-data[image-data-position_++] = pal[index * 3 + 0]
+          image-data[image-data-position_++] = pal[index * 3 + 1]
+          image-data[image-data-position_++] = pal[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 8:
         if color-type == COLOR-TYPE-INDEXED or color-type == COLOR-TYPE-GREYSCALE:
           width.repeat:
             index := line[it]
-            image-data[image-data-position_++] = palette-r_[index]
-            image-data[image-data-position_++] = palette-g_[index]
-            image-data[image-data-position_++] = palette-b_[index]
+            image-data[image-data-position_++] = pal[index * 3 + 0]
+            image-data[image-data-position_++] = pal[index * 3 + 1]
+            image-data[image-data-position_++] = pal[index * 3 + 2]
             image-data[image-data-position_++] = palette-a_[index]
         else if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
           width.repeat:
@@ -326,47 +347,7 @@ class Png:
           image-data.replace image-data-position_ line
           image-data-position_ += width << 2
       else:
-        assert: bit-depth == 16
-        if color-type == COLOR-TYPE-GREYSCALE:
-          width.repeat:
-            value := BIG-ENDIAN.uint16 line (it << 1)
-            image-data[image-data-position_++] = value >> 8
-            image-data[image-data-position_++] = value >> 8
-            image-data[image-data-position_++] = value >> 8
-            if r-transparent_ == value:
-              image-data[image-data-position_++] = 0
-            else:
-              image-data[image-data-position_++] = 255
-        else if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
-          width.repeat:
-            value := BIG-ENDIAN.uint16 line (it << 2)
-            alpha := BIG-ENDIAN.uint16 line ((it << 2) + 2)
-            image-data[image-data-position_++] = value >> 8
-            image-data[image-data-position_++] = value >> 8
-            image-data[image-data-position_++] = value >> 8
-            image-data[image-data-position_++] = alpha >> 8
-        else if color-type == COLOR-TYPE-TRUECOLOR:
-          width.repeat:
-            r := BIG-ENDIAN.uint16 line (it * 6)
-            g := BIG-ENDIAN.uint16 line (it * 6 + 2)
-            b := BIG-ENDIAN.uint16 line (it * 6 + 4)
-            image-data[image-data-position_++] = r >> 8
-            image-data[image-data-position_++] = g >> 8
-            image-data[image-data-position_++] = b >> 8
-            if r == r-transparent_ and g == g-transparent_ and b == b-transparent_:
-              image-data[image-data-position_++] = 0
-            else:
-              image-data[image-data-position_++] = 255
-        else if color-type == COLOR-TYPE-TRUECOLOR-ALPHA:
-          width.repeat:
-            r := BIG-ENDIAN.uint16 line (it << 3)
-            g := BIG-ENDIAN.uint16 line ((it << 3) + 2)
-            b := BIG-ENDIAN.uint16 line ((it << 3) + 4)
-            a := BIG-ENDIAN.uint16 line ((it << 3) + 6)
-            image-data[image-data-position_++] = r >> 8
-            image-data[image-data-position_++] = g >> 8
-            image-data[image-data-position_++] = b >> 8
-            image-data[image-data-position_++] = a >> 8
+        throw "No support RGBA-converting 16 bit images"
     if image-data-position_ != image-data.size:
       throw "Not enough image data"
     done.set null

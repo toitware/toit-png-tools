@@ -11,7 +11,7 @@ import host.file
 import host.pipe
 import monitor show Latch
 import reader show BufferedReader
-import png-tools show Png
+import png-tools.png-reader show Png
 import png-tools.png-writer show PngWriter
 import zlib
 import .version
