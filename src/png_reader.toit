@@ -5,7 +5,6 @@
 import binary show BIG-ENDIAN byte-swap-32
 import bytes show Buffer
 import crypto.crc show *
-import host.file
 import monitor show Latch
 import reader
 import zlib
@@ -65,10 +64,6 @@ class Png:
       assert: color-type == COLOR-TYPE-TRUECOLOR-ALPHA
       color-type-string = "truecolor with alpha"
     return "PNG, $(width)x$height, bit depth: $bit-depth, color type: $color-type-string"
-
-  constructor.from-file filename/string:
-    return Png --filename=filename
-        file.read-content filename
 
   constructor .bytes --.filename/string?=null:
     pos := HEADER_.size
@@ -332,7 +327,3 @@ class Chunk:
     if checksum != calculated-checksum:
       throw "Invalid checksum"
     position-updater.call position + size + 12
-
-main:
-  png := Png.from-file "test.png"
-  print png

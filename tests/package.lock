@@ -1,12 +1,10 @@
 sdk: ^2.0.0-alpha.64
 prefixes:
   host: pkg-host
-  png_reader: ..
+  png-tools: ..
 packages:
   ..:
     path: ..
-    prefixes:
-      host: pkg-host
   pkg-host:
     url: github.com/toitlang/pkg-host
     name: host

@@ -6,7 +6,6 @@ import binary
 import binary show BIG-ENDIAN byte-swap-32
 import bytes show Buffer
 import crypto.crc show *
-import host.file
 import monitor show Latch
 import .png-reader
 import reader
@@ -16,7 +15,7 @@ class PngWriter:
   stream_/any
   compressor_ := ?
   done_/Latch
-  compressed_data_/Buffer? := null
+  compressed-data_/Buffer? := null
 
   constructor .stream_ width/int height/int
       --bit-depth/int=8
@@ -25,7 +24,7 @@ class PngWriter:
       --run-length-encoding/bool?=null
       --compression-level/int=6
       --all-in-one-chunk/bool=false:
-    if all-in-one-chunk: compressed_data_ = Buffer
+    if all-in-one-chunk: compressed-data_ = Buffer
     HEADER ::= #[0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n']
     if compression == null and run-length-encoding == null:
       compression = true
@@ -64,19 +63,19 @@ class PngWriter:
     compressor_.close
     done_.get
 
-  static byte_swap_ ba/ByteArray -> ByteArray:
+  static byte-swap_ ba/ByteArray -> ByteArray:
     result := ba.copy
-    binary.byte_swap_32 result
+    binary.byte-swap_32 result
     return result
 
   write-function:
     while data := compressor_.reader.read:
-      if compressed_data_:
-        compressed_data_.write data
+      if compressed-data_:
+        compressed-data_.write data
       else:
         write-chunk "IDAT" data
-    if compressed_data_:
-      write-chunk "IDAT" compressed_data_.bytes
+    if compressed-data_:
+      write-chunk "IDAT" compressed-data_.bytes
     write-chunk "IEND" #[]
     done_.set null
 

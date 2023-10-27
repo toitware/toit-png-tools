@@ -7,7 +7,7 @@ import cli
 import host.file
 import host.directory show *
 import monitor
-import png-reader
+import png-tools.png-reader
 import png-display
 import zlib
 
@@ -42,7 +42,8 @@ scale parsed/cli.Parsed:
   input := parsed["input"]
   output:= parsed["output"]
 
-  png := png-reader.Png.from-file input
+  png-bytes := file.read-content input
+  png := png-reader.Png png-bytes --filename=input
   print png
 
   x-scale := parsed["reduction"]

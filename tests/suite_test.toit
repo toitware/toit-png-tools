@@ -6,7 +6,7 @@ import expect show *
 import host.directory show *
 import host.file
 import encoding.json
-import png-reader show *
+import png-tools.png-reader show *
 
 main:
   dir := DirectoryStream "tests/third_party/pngsuite/png"
@@ -19,7 +19,9 @@ main:
         continue  // Interlaced PNGs.
       print "$counter: $filename"
       counter++
-      png := Png.from-file "tests/third_party/pngsuite/png/$filename"
+      path := "tests/third_party/pngsuite/png/$filename"
+      png-bytes := file.read-content path
+      png := Png png-bytes --filename=path
       print png
       root := filename[..filename.size - 4]
       json-file := "tests/third_party/pngsuite/json/$(root).json"

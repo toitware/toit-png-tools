@@ -2,12 +2,10 @@ sdk: ^2.0.0-alpha.64
 prefixes:
   cli: pkg-cli
   host: pkg-host
-  png-reader: ..
+  png-tools: ..
 packages:
   ..:
     path: ..
-    prefixes:
-      host: pkg-host
   pkg-cli:
     url: github.com/toitlang/pkg-cli
     name: cli
