@@ -1,4 +1,2 @@
-dependencies:
-  host:
-    url: github.com/toitlang/pkg-host
-    version: ^1.9.0
+name: png-tools
+description: Tools for manipulating PNGs, written in Toit.

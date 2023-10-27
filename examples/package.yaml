@@ -5,8 +5,8 @@ dependencies:
   host:
     url: github.com/toitlang/pkg-host
     version: ^1.9.0
+  png-tools:
+    path: ..
   png_display:
     url: github.com/toitware/toit-png-display
-    version: ^0.2.0
-  png_reader:
-    path: ..
+    version: ^0.3.0

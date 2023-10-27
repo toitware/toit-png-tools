@@ -3,7 +3,7 @@
 // be found in the EXAMPLES_LICENSE file.
 
 import expect show *
-import png-reader
+import png-tools.png-reader
 import host.file
 import host.directory show *
 
@@ -47,7 +47,8 @@ main:
   compress "chrome.png"
 
 compress filename -> none:
-  png := png-reader.Png.from-file filename
+  png-bytes := file.read-content filename
+  png := png-reader.Png png-bytes --filename=filename
   print png
   map := {:}
   for i := 0; i < png.image-data.size; i += 4:
