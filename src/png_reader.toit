@@ -26,6 +26,49 @@ PREDICTOR-UP_ ::= 2
 PREDICTOR-AVERAGE_ ::= 3
 PREDICTOR-PAETH_ ::= 4
 
+/**
+A PNG reader that converts all PNG files into
+  32 bit per pixel RGBA format.
+*/
+class PngRgba:
+
+/**
+A PNG reader that converts all PNG files into
+  a decompressed format with the bit depths
+  and color types of the original file.
+*/
+class PngReader:
+
+/**
+A PNG reader that gives random access to the
+  decompressed pixel data.  Bit widths other
+  than 8 are expanded/truncated on demand.
+
+Available formats are 8-bit palette (with
+  alpha, and 32-bit RGBA.  Grayscale and
+  palette with 1/2/4 bits per pixel are
+  delivered as 8-bit palette.
+
+The PNG must be uncompressed to give random
+  access.  Such PNGs are created by the
+  pngunzip tool from this repository - see
+  https://github.com/toitware/toit-png-tools/releases.
+*/
+class PngRandomAccess extends Png:
+  // A sequence of y-coordinates and file positions for uncompressed lines.
+  // The uncompressed data includes a filter byte for each line, which
+  // must always be 0 (no predictor).
+  uncompressed-line-offsets_ := []
+
+
+  constructor .bytes --filename/string?=null:
+    super bytes --filename=filename
+    if image-data-is-uncompressed_ bytes pos:
+      print "Uncompressed image data"
+      print uncompressed-line-offsets_
+    else:
+      uncompressed-line-offsets_ = []
+
 class Png:
   filename/string?
   bytes/ByteArray
@@ -50,10 +93,6 @@ class Png:
   decompressor_/zlib.CopyingInflater
   done/Latch := Latch
   convert-to-rgba/bool
-  // A sequence of y-coordinates and file positions for uncompressed lines.
-  // The uncompressed data includes a filter byte for each line, which
-  // must always be 0 (no predictor).
-  uncompressed-line-offsets_ := []
 
   stringify:
     color-type-string/string := ?
@@ -96,10 +135,6 @@ class Png:
       image-data = ByteArray (byte-width * height)
     previous-line_ = ByteArray byte-width
     task:: write-image-data
-    if image-data-is-uncompressed_ bytes pos:
-      print "Uncompressed image data"
-    else:
-      uncompressed-line-offsets_ = []
     while true:
       chunk := Chunk bytes pos : pos = it
       if chunk.name == "PLTE":
@@ -153,6 +188,7 @@ class Png:
           found-header = true
         while chunk-pos != chunk.size:
           if chunk-pos > chunk.size:
+            print "Chopped up"
             return false  // Some zlib control bytes were chopped up.
           if literal-bytes-left-in-block != 0:
             // Record line position in PNG file.
@@ -161,6 +197,7 @@ class Png:
 
             next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
             if next-part-of-block % (byte-width + 1) != 0:
+              print "next-part-of-block $next-part-of-block, $byte-width"
               return false  // Chunk boundary and line boundary don't match.
             for i := 0; i < next-part-of-block; i += byte-width + 1:
               y++
