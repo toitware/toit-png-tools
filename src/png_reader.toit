@@ -2,7 +2,7 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import binary show BIG-ENDIAN byte-swap-32
+import binary show BIG-ENDIAN byte-swap-32 LITTLE-ENDIAN
 import bytes show Buffer
 import crypto.crc show *
 import monitor show Latch
@@ -97,7 +97,7 @@ class Png:
     previous-line_ = ByteArray byte-width
     task:: write-image-data
     if image-data-is-uncompressed_ bytes pos:
-      //print "Uncompressed image data"
+      print "Uncompressed image data"
     else:
       uncompressed-line-offsets_ = []
     while true:
@@ -137,6 +137,8 @@ class Png:
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
+    end-of-zlib-stream := false
+
     while true:
       file-offset := 0
       chunk := Chunk bytes pos: | position-after-chunk chunk-data-position |
@@ -161,24 +163,26 @@ class Png:
             if next-part-of-block % (byte-width + 1) != 0:
               return false  // Chunk boundary and line boundary don't match.
             for i := 0; i < next-part-of-block; i += byte-width + 1:
+              y++
               if chunk.data[chunk-pos + i] != 0:
                 return false  // Non-trivial predictor byte.
-            y += next-part-of-block / (byte-width + 1)
             literal-bytes-left-in-block -= next-part-of-block
             chunk-pos += next-part-of-block
           else:
             // Next zlib block has a 3-bit intro.  If it's a literal block, the
             // full size of the intro is 5 bytes.
+            if end-of-zlib-stream:
+              return true
             block-bits := chunk.data[chunk_pos] & 7
             if block-bits & 6 != 0:
               return false  // Not uncompressed.
-            literal-bytes-left-in-block = BIG-ENDIAN.uint16 chunk.data (chunk-pos + 1)
+            if block-bits & 1 == 1:
+              end-of-zlib-stream = true
+            literal-bytes-left-in-block = LITTLE-ENDIAN.uint16 chunk.data (chunk-pos + 1)
+            chunk-pos += 5
             if literal-bytes-left-in-block % (byte-width + 1) != 0:
               // Zlib literal block size and line width don't match.
               return false
-            chunk-pos += 5
-      else if chunk.name == "IEND":
-        return true
       else:
         // Skip unknown chunks at this stage.
 
