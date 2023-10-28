@@ -351,7 +351,47 @@ class Png:
           image-data.replace image-data-position_ line
           image-data-position_ += width << 2
       else:
-        throw "No support RGBA-converting 16 bit images"
+        assert: bit-depth == 16
+        if color-type == COLOR-TYPE-GREYSCALE:
+          width.repeat:
+            value := BIG-ENDIAN.uint16 line (it << 1)
+            image-data[image-data-position_++] = value >> 8
+            image-data[image-data-position_++] = value >> 8
+            image-data[image-data-position_++] = value >> 8
+            if r-transparent_ == value:
+              image-data[image-data-position_++] = 0
+            else:
+              image-data[image-data-position_++] = 255
+        else if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+          width.repeat:
+            value := BIG-ENDIAN.uint16 line (it << 2)
+            alpha := BIG-ENDIAN.uint16 line ((it << 2) + 2)
+            image-data[image-data-position_++] = value >> 8
+            image-data[image-data-position_++] = value >> 8
+            image-data[image-data-position_++] = value >> 8
+            image-data[image-data-position_++] = alpha >> 8
+        else if color-type == COLOR-TYPE-TRUECOLOR:
+          width.repeat:
+            r := BIG-ENDIAN.uint16 line (it * 6)
+            g := BIG-ENDIAN.uint16 line (it * 6 + 2)
+            b := BIG-ENDIAN.uint16 line (it * 6 + 4)
+            image-data[image-data-position_++] = r >> 8
+            image-data[image-data-position_++] = g >> 8
+            image-data[image-data-position_++] = b >> 8
+            if r == r-transparent_ and g == g-transparent_ and b == b-transparent_:
+              image-data[image-data-position_++] = 0
+            else:
+              image-data[image-data-position_++] = 255
+        else if color-type == COLOR-TYPE-TRUECOLOR-ALPHA:
+          width.repeat:
+            r := BIG-ENDIAN.uint16 line (it << 3)
+            g := BIG-ENDIAN.uint16 line ((it << 3) + 2)
+            b := BIG-ENDIAN.uint16 line ((it << 3) + 4)
+            a := BIG-ENDIAN.uint16 line ((it << 3) + 6)
+            image-data[image-data-position_++] = r >> 8
+            image-data[image-data-position_++] = g >> 8
+            image-data[image-data-position_++] = b >> 8
+            image-data[image-data-position_++] = a >> 8
     if image-data-position_ != image-data.size:
       throw "Not enough image data"
     done.set null

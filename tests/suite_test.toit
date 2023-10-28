@@ -15,8 +15,6 @@ main:
     if filename.ends-with ".png":
       if filename.starts-with "x":
         continue  // Error PNGs.
-      if filename.ends-with "16.png":
-        continue  // 16-bit PNGs.
       if filename[3] == 'i':
         continue  // Interlaced PNGs.
       print "$counter: $filename"
