@@ -30,14 +30,18 @@ PREDICTOR-PAETH_ ::= 4
 A PNG reader that converts all PNG files into
   32 bit per pixel RGBA format.
 */
-class PngRgba:
+class PngRgba extends PngDecompressor_:
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename --convert-to-rgba
 
 /**
 A PNG reader that converts all PNG files into
   a decompressed format with the bit depths
   and color types of the original file.
 */
-class PngReader:
+class Png extends PngDecompressor_:
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename --no-convert-to-rgba
 
 /**
 A PNG reader that gives random access to the
@@ -54,7 +58,7 @@ The PNG must be uncompressed to give random
   pngunzip tool from this repository - see
   https://github.com/toitware/toit-png-tools/releases.
 */
-class PngRandomAccess extends Png:
+class PngRandomAccess extends Png_:
   // A sequence of y-coordinates and file positions for uncompressed lines.
   // The uncompressed data includes a filter byte for each line, which
   // must always be 0 (no predictor).
@@ -83,7 +87,6 @@ class PngRandomAccess extends Png:
     we cannot access them independently, so we return false in this case.
   */
   image-data-is-uncompressed_ bytes/ByteArray -> bool:
-    pos := 33
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
@@ -138,17 +141,14 @@ class PngRandomAccess extends Png:
       else:
         // Skip unknown chunks at this stage.
 
-class Png:
+class Png_:
   filename/string?
   bytes/ByteArray
   width/int
   height/int
-  image-data/ByteArray? := null
-  image-data-position_/int := 0
   bit-depth/int
   color-type/int
-  compression-method/int
-  filter-method/int
+  pos := 0
   palette/ByteArray? := null
   saved-chunks/Map := {:}
   palette-a_/ByteArray? := null
@@ -159,9 +159,23 @@ class Png:
   byte-width/int := 0   // Number of bytes in a line.
   lookbehind-offset/int := 0  // How many bytes to look back to get previous pixel.
   previous-line_/ByteArray? := null
-  decompressor_/zlib.CopyingInflater
-  done/Latch := Latch
-  convert-to-rgba/bool
+
+  constructor .bytes --.filename/string?:
+    pos = HEADER_.size
+    if bytes.size < pos:
+      throw "File too small" + (filename ? ": $filename" : "")
+    if bytes[0..pos] != HEADER_:
+      throw "Invalid PNG header" + (filename ? ": $filename" : "")
+    ihdr := Chunk bytes pos: pos = it
+    if ihdr.name != "IHDR":
+      throw "First chunk is not IHDR" + (filename ? ": $filename" : "")
+    width = BIG-ENDIAN.uint32 ihdr.data 0
+    height = BIG-ENDIAN.uint32 ihdr.data 4
+    bit-depth = ihdr.data[8]
+    color-type = ihdr.data[9]
+    if ihdr.data[10] != 0: throw "Unknown compression method"
+    if ihdr.data[11] != 0: throw "Unknown filter method"
+    if ihdr.data[12] != 0: throw "Interlaced images not supported"
 
   stringify:
     color-type-string/string := ?
@@ -178,27 +192,20 @@ class Png:
       color-type-string = "truecolor with alpha"
     return "PNG, $(width)x$height, bit depth: $bit-depth, color type: $color-type-string"
 
-  constructor .bytes --.filename/string?=null --.convert-to-rgba/bool?=true:
-    pos := HEADER_.size
-    if bytes.size < pos:
-      throw "File too small" + (filename ? ": $filename" : "")
-    if bytes[0..pos] != HEADER_:
-      throw "Invalid PNG header" + (filename ? ": $filename" : "")
-    ihdr := Chunk bytes pos: pos = it
-    if ihdr.name != "IHDR":
-      throw "First chunk is not IHDR" + (filename ? ": $filename" : "")
-    width = BIG-ENDIAN.uint32 ihdr.data 0
-    height = BIG-ENDIAN.uint32 ihdr.data 4
-    bit-depth = ihdr.data[8]
-    color-type = ihdr.data[9]
-    compression-method = ihdr.data[10]
-    filter-method = ihdr.data[11]
-    if ihdr.data[12] != 0: throw "Interlaced images not supported"
+class PngDecompressor_ extends Png_:
+  image-data/ByteArray? := null
+  image-data-position_/int := 0
+  convert-to-rgba_/bool
+  decompressor_/zlib.CopyingInflater
+  done/Latch := Latch
+
+  constructor bytes/ByteArray --filename/string? --convert-to-rgba/bool?:
+    convert-to-rgba_ = convert-to-rgba
     decompressor_ = zlib.CopyingInflater
-    //////////////////////////////////////////////////
-    process-bit-depth_ bit-depth color-type filter-method
+    super bytes --filename=filename
+    process-bit-depth_ bit-depth color-type
     byte-width = (width * pixel-width + 7) / 8
-    if convert-to-rgba:
+    if convert-to-rgba_:
       image-data = ByteArray (4 * width * height)
     else:
       image-data = ByteArray (byte-width * height)
@@ -223,9 +230,7 @@ class Png:
       else if chunk.name[0] & 0x20 == 0:
         throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
 
-  process-bit-depth_ bit-depth/int color-type/int filter-method/int -> none:
-    if filter-method != 0:
-      throw "Unknown filter method"
+  process-bit-depth_ bit-depth/int color-type/int -> none:
     if bit-depth < 1 or not bit-depth.is-power-of-two:
       throw "Invalid bit depth"
     if color-type == COLOR-TYPE-GREYSCALE:
@@ -331,7 +336,7 @@ class Png:
       previous-line_ = line
       pal := palette or (ByteArray 768: it / 3)
 
-      if not convert-to-rgba:
+      if not convert-to-rgba_:
         image-data.replace image-data-position_ line
         image-data-position_ += byte-width
         continue

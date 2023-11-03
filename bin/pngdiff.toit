@@ -11,7 +11,7 @@ import host.file
 import host.pipe
 import monitor show Latch
 import reader show BufferedReader
-import png-tools.png-reader show Png
+import png-tools.png-reader show PngRgba
 import png-tools.png-writer show PngWriter
 import zlib
 import .version
@@ -217,7 +217,7 @@ diff parsed -> none:
 /// Maps all non-zero bytes to the brightest possible value.
 MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 
-slurp-file file-name/string --debug/bool -> Png:
+slurp-file file-name/string --debug/bool -> PngRgba:
   error := catch --unwind=debug:
     reader := BufferedReader
         file-name == "-" ?
@@ -225,7 +225,7 @@ slurp-file file-name/string --debug/bool -> Png:
             file.Stream.for-read file-name
     reader.buffer-all
     content := reader.read-bytes reader.buffered
-    png := Png content
+    png := PngRgba content
     return png
   if error:
     if error == "OUT_OF_BOUNDS":

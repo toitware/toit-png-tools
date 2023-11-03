@@ -109,7 +109,7 @@ slurp-file file-name/string --debug/bool -> Png:
             file.Stream.for-read file-name
     reader.buffer-all
     content := reader.read-bytes reader.buffered
-    png := Png content --no-convert-to-rgba
+    png := Png content
     return png
   if error:
     if error == "OUT_OF_BOUNDS":
