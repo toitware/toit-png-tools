@@ -21,7 +21,7 @@ main:
       counter++
       path := "tests/third_party/pngsuite/png/$filename"
       png-bytes := file.read-content path
-      png := Png png-bytes --filename=path
+      png := PngRgba png-bytes --filename=path
       print png
       root := filename[..filename.size - 4]
       json-file := "tests/third_party/pngsuite/json/$(root).json"
