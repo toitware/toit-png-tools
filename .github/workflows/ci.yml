@@ -130,7 +130,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: binaries-${{ runner.os }}
-          file: build/png*
+          path: build/png*
           overwrite: true
           file_glob: true
 
