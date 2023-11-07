@@ -61,7 +61,7 @@ foreach(file ${SH_TESTS})
 
   add_test(
     NAME "${test_name}"
-    COMMAND "bash" "tests/${file}" "${TOIT_EXEC}"
+    COMMAND "bash" "tests/${file}" "${TOITRUN}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
   )
 
