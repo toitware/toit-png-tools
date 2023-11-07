@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import binary show BIG-ENDIAN byte-swap-32 LITTLE-ENDIAN
+import bitmap show blit
 import bytes show Buffer
 import crypto.crc show *
 import monitor show Latch
@@ -34,6 +35,9 @@ class PngRgba extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --convert-to-rgba
 
+  get-indexed-image-data line/int pixel-data/ByteArray alpha-data/ByteArray -> none:
+    throw "Palette image data is not available from PngRgba"
+
 /**
 A PNG reader that converts all PNG files into
   a decompressed format with the bit depths
@@ -42,6 +46,52 @@ A PNG reader that converts all PNG files into
 class Png extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --no-convert-to-rgba
+
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TURECOLOR or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+      throw "PNG is not palette or grayscale"
+    index := line * byte-width
+    source := image-data[index .. index + byte-width]
+    if bit-depth == 16:
+      throw "PNG is 16 bit per pixel"
+    else if bit-depth == 8:
+      pixel-data.replace 0 source
+    else if bit-depth == 4:
+      bytemap-zap pixel-data 0
+      blit
+          source
+          pixel-data        // Destination.
+          (width + 1) >> 1  // Pixels per line.
+          --shift=4         // Shift right 4 bits.
+          --mask=0xf        // Mask out the lower 4 bits.
+          --destination-pixel-stride=2
+      blit
+          source[1..]
+          pixel-data        // Destination.
+          width >> 1        // Pixels per line.
+          --mask=0xf        // Mask out the upper 4 bits.
+          --destination-pixel-stride=2
+    else if bit-depth == 2:
+      bytemap-zap pixel-data 0
+      4.repeat: | shift |
+        blit
+            source
+            pixel-data[shift..]                // Destination.
+            (width + 3 - shift) >> 2           // Pixels per line.
+            --shift="\x06\x04\x02\x00"[shift]  // Shift right 6, 4, 2, 0 bits.
+            --mask=0x3                         // Mask out the other 6 bits.
+            --destination-pixel-stride=4
+    else:
+      assert: bit-depth == 1:
+      bytemap-zap pixel-data 0
+      8.repeat: | shift |
+        blit
+            source
+            pixel-data[shift..]                // Destination.
+            (width + 7 - shift) >> 3           // Pixels per line.
+            --shift="\x07\x06\x05\x04\x03\x02\x02\x00"[shift]
+            --mask=1                           // Mask out the other 6 bits.
+            --destination-pixel-stride=8
 
 /**
 A PNG reader that gives random access to the
@@ -66,11 +116,8 @@ class PngRandomAccess extends Png_:
 
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
-    if image-data-is-uncompressed_ bytes:
-      print "Uncompressed image data"
-      print uncompressed-line-offsets_
-    else:
-      uncompressed-line-offsets_ = []
+    if not image-data-is-uncompressed_ bytes:
+      throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
 
   /**
   Check that the image data is uncompressed, meaning it is all literal
@@ -141,7 +188,7 @@ class PngRandomAccess extends Png_:
       else:
         // Skip unknown chunks at this stage.
 
-class Png_:
+abstract class Png_:
   filename/string?
   bytes/ByteArray
   width/int
@@ -149,9 +196,9 @@ class Png_:
   bit-depth/int
   color-type/int
   pos := 0
-  palette/ByteArray? := null
+  palette_/ByteArray := #[]
   saved-chunks/Map := {:}
-  palette-a_/ByteArray? := null
+  palette-a_/ByteArray := #[]
   r-transparent_/int? := null
   g-transparent_/int? := null
   b-transparent_/int? := null
@@ -176,6 +223,38 @@ class Png_:
     if ihdr.data[10] != 0: throw "Unknown compression method"
     if ihdr.data[11] != 0: throw "Unknown filter method"
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
+
+  /**
+  Returns a ByteArray describing the palette for the PNG, with
+    three bytes per index in the order RGBRGBRGB...
+  If the image is true-color or true-color with alpha, or
+    gray-scale with alpha, returns a zero length byte array.
+  */
+  palette -> ByteArray:
+    return palette_
+
+  /**
+  Returns a ByteArray describing the alpha-palette for the PNG, with
+    one bytes per index where 0 is transparent and 255 is opaque.
+  If the image is true-color or true-color with alpha, or
+    gray-scale with alpha, returns a zero length byte array.
+  */
+  alpha-palette -> ByteArray:
+    return palette-a_
+
+  /**
+  Writes the image data for the given line into the two byte arrays
+    provided.  One byte per pixel is written into $pixel-data.
+  The pixel data should be read in connection with $palette.
+  In compressed PNGs this method may cause a lot of image data to be
+    decompressed, especially if this method is not called in order
+    of non-descending $line.
+  Throws an exception if the image is in RGB, RGBA, or gray-with alpha format.
+  Guard aginst this by checking whether $color-type returns
+    $COLOR-TYPE-TRUECOLOR, $COLOR-TYPE-TRUECOLOR-ALPHA, or
+    $COLOR-TYPE-GREYSCALE-ALPHA.
+  */
+  abstract get-indexed-image-data line/int pixel-data/ByteArray -> none
 
   stringify:
     color-type-string/string := ?
@@ -265,7 +344,7 @@ class PngDecompressor_ extends Png_:
       return  // Just a suggested palette.
     if chunk.size % 3 != 0:
       throw "Invalid palette size"
-    palette = chunk.data
+    palette_ = chunk.data
 
   handle-transparency chunk/Chunk:
     saved-chunks[chunk.name] = chunk.data
@@ -286,7 +365,7 @@ class PngDecompressor_ extends Png_:
       throw "Transparency chunk for non-indexed image"
 
   ensure-alpha-palette_ min-size/int:
-    if bit-depth <= 8 and not palette-a_:
+    if bit-depth <= 8 and palette-a_.size == 0:
       if color-type == COLOR-TYPE-INDEXED:
         palette-a_ = ByteArray (max min-size (1 << bit-depth)): 255
       else if color-type == COLOR-TYPE-GREYSCALE or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
@@ -295,14 +374,14 @@ class PngDecompressor_ extends Png_:
           palette-a_ = ByteArray (max min-size size): 255
 
   ensure-rgb-palette_ min-size/int:
-    if bit-depth <= 8 and not palette:
+    if bit-depth <= 8 and not palette_:
       if color-type == COLOR-TYPE-INDEXED:
         throw "No palette for indexed image"
       else if color-type == COLOR-TYPE-GREYSCALE or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
         if bit-depth <= 4:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
-          palette = ByteArray (size * 3): (it / 3) * factor
+          palette_ = ByteArray (size * 3): (it / 3) * factor
 
   handle-image-data chunk/Chunk:
     bytes-written := 0
@@ -334,7 +413,7 @@ class PngDecompressor_ extends Png_:
       else if filter != PREDICTOR-NONE_:
         throw "Unknown filter type: $filter"
       previous-line_ = line
-      pal := palette or (ByteArray 768: it / 3)
+      pal := palette_ or (ByteArray 768: it / 3)
 
       if not convert-to-rgba_:
         image-data.replace image-data-position_ line
