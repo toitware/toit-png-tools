@@ -130,23 +130,9 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: binaries-${{ runner.os }}
-          path: build/${{env.APP_NAME}}${{ env.BIN_EXTENSION }}
-
-      - name: Upload Linux tar.gz
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v3
-        with:
-          name: binaries-Linux-tar
-          path: build/${{env.APP_NAME}}-linux.tar.gz
-
-      - name: Upload release Linux executable
-        if: github.event_name == 'release' && runner.os == 'Linux'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: build/${{env.APP_NAME}}-linux.tar.gz
-          tag: ${{ github.event.release.tag_name }}
+          file: build/png*
           overwrite: true
+          file_glob: true
 
   sign-windows:
     runs-on: windows-signing
