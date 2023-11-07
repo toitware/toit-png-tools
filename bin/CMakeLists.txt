@@ -22,9 +22,20 @@ ADD_TOIT_EXE(
   ""
 )
 
+set(PNGUNZIP_SOURCE "${CMAKE_CURRENT_LIST_DIR}/pngunzip.toit")
+set(PNGUNZIP_EXE "${CMAKE_BINARY_DIR}/pngunzip${CMAKE_EXECUTABLE_SUFFIX}")
+set(PNGUNZIP_DEP "${CMAKE_CURRENT_BINARY_DIR}/pngunzip.dep")
+
+ADD_TOIT_EXE(
+  ${PNGUNZIP_SOURCE}
+  ${PNGUNZIP_EXE}
+  ${PNGUNZIP_DEP}
+  ""
+)
+
 add_custom_target(
   build_binaries
-  DEPENDS ${PNGDIFF_EXE}
+  DEPENDS ${PNGDIFF_EXE} ${PNGUNZIP_EXE}
 )
 
 add_dependencies(build build_binaries)
