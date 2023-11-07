@@ -116,11 +116,6 @@ jobs:
         run: |
           make
 
-      - name: Tar.gz Linux executable
-        if: runner.os == 'Linux'
-        run: |
-          tar c -zvf build/${{env.APP_NAME}}-linux.tar.gz -C build ${{env.APP_NAME}}
-
       - name: Run tests
         shell: bash
         run: |
