@@ -6,8 +6,22 @@ cmake_minimum_required(VERSION 3.23)
 
 project(pngdiff)
 
-# Add windows exe extension.
-set(TOIT_EXEC "toit.run${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to run the tests")
+set(TOITRUN
+    "toit.run${CMAKE_EXECUTABLE_SUFFIX}"
+    CACHE
+    FILEPATH
+    "The executable used to run programs")
+set(TOITPKG
+    "toit.pkg${CMAKE_EXECUTABLE_SUFFIX}"
+    CACHE
+    FILEPATH
+    "The executable used to install packages")
+set(TOITC
+    "toit.compile${CMAKE_EXECUTABLE_SUFFIX}"
+    CACHE
+    FILEPATH
+    "The executable used to compile programs and check the syntax")
+
 set(TPKG_EXEC "toit.pkg${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to install the packages")
 set(TCOMPILE_EXEC "toit.compile${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to check the syntax")
 
@@ -26,6 +40,10 @@ configure_file(
   bin/version.toit.in
   ${CMAKE_CURRENT_SOURCE_DIR}/bin/version.toit
   @ONLY)
+
+include("tools/toit.cmake")
+
+add_custom_target(build)
 
 enable_testing()
 add_subdirectory(tests)
