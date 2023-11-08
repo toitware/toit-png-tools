@@ -2,18 +2,12 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import binary
-import binary show BIG-ENDIAN
-import bitmap
 import cli
-import crypto.crc show *
 import host.file
 import host.pipe
-import monitor show Latch
-import reader show BufferedReader
 import png-tools.png-reader show Png
 import png-tools.png-writer show PngWriter
-import zlib
+import reader show BufferedReader
 import .version
 
 main args/List:

@@ -15,10 +15,10 @@ import zlib
 
 HEADER_ ::= #[0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n']
 
-COLOR-TYPE-GREYSCALE ::= 0
+COLOR-TYPE-GRAYSCALE ::= 0
 COLOR-TYPE-TRUECOLOR ::= 2
 COLOR-TYPE-INDEXED ::= 3
-COLOR-TYPE-GREYSCALE-ALPHA ::= 4
+COLOR-TYPE-GRAYSCALE-ALPHA ::= 4
 COLOR-TYPE-TRUECOLOR-ALPHA ::= 6
 
 PREDICTOR-NONE_ ::= 0
@@ -48,7 +48,7 @@ class Png extends PngDecompressor_:
     super bytes --filename=filename --no-convert-to-rgba
 
   get-indexed-image-data line/int pixel-data/ByteArray -> none:
-    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
       throw "PNG is not palette or grayscale"
     index := line * byte-width
     source := image-data[index .. index + byte-width]
@@ -94,21 +94,69 @@ class Png extends PngDecompressor_:
             --destination-pixel-stride=8
 
 /**
-A PNG reader that gives random access to the
-  decompressed pixel data.  Bit widths other
-  than 8 are expanded/truncated on demand.
+Scans a Png file for useful information, without decompressing the image data.
+*/
+class PngInfo extends PngScanner_:
+  uncompressed_ := false
 
-Available formats are 8-bit palette (with
-  alpha, and 32-bit RGBA.  Grayscale and
-  palette with 1/2/4 bits per pixel are
-  delivered as 8-bit palette.
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename
+    uncompressed_ = image-data-is-uncompressed_ bytes: null
 
-The PNG must be uncompressed to give random
-  access.  Such PNGs are created by the
-  pngunzip tool from this repository - see
+  /**
+  Returns true if the image data in the PNG is uncompressed, and all
+    scanlines are each present in one continuous byte range that does
+    not depend on the other scanlines.
+  */
+  uncompressed-random-access -> bool:
+    return uncompressed_
+
+  /**
+  Compression ratio in percent, relative to a 32 bit per pixel RGBA image with
+    no headers or metadata.
+  Normally returns a percentage less than 100, but could return about 200 for
+    a 16 bit image.
+  */
+  compression-ratio-rgba -> float:
+    rgba-size := width * height * 4
+    return (bytes.size.to-float * 100) / rgba-size
+
+  /**
+  Compression ratio in percent, relative to a 24 bit per pixel RGB image with
+    no headers or metadata and no transparency information.  The returned
+    value is similar to the file size relative to a PNM file with the same
+    image data.
+  Normally returns a percentage less than 100, but could return about 200 for
+    a 16 bit image.
+  */
+  compression-ratio-rgb -> float:
+    rgb-size := width * height * 3
+    return (bytes.size.to-float * 100) / rgb-size
+
+  /**
+  Compression ratio in percent, relative to an uncompressed image stored with
+    the same bit depth and color type, with no headers or metadata.
+  Normally returns a percentage less than 100.
+  */
+  compression-ratio -> float:
+    uncompressed-size := byte-width * height
+    return (bytes.size.to-float * 100) / uncompressed-size
+
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    throw "not implemented"
+
+/**
+A PNG reader that gives random access to the decompressed pixel data.  Bit
+  widths other than 8 are expanded/truncated on demand.
+
+Available formats are 8-bit palette (with alpha, and 32-bit RGBA.  Grayscale
+  and palette with 1/2/4 bits per pixel are delivered as 8-bit palette.
+
+The PNG must be uncompressed to give random access.  Such PNGs are created by
+  the pngunzip tool from this repository - see
   https://github.com/toitware/toit-png-tools/releases.
 */
-class PngRandomAccess extends Png_:
+class PngRandomAccess extends PngScanner_:
   // A sequence of y-coordinates and file positions for uncompressed lines.
   // The uncompressed data includes a filter byte for each line, which
   // must always be 0 (no predictor).
@@ -116,8 +164,20 @@ class PngRandomAccess extends Png_:
 
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
-    if not image-data-is-uncompressed_ bytes:
+    process-bit-depth_ bit-depth color-type
+    uncompressed := image-data-is-uncompressed_ bytes: | y offset |
+      uncompressed-line-offsets_.add y
+      uncompressed-line-offsets_.add offset
+
+    if not uncompressed:
       throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
+
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    unreachable  // TODO.
+
+abstract class PngScanner_ extends Png_:
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename
 
   /**
   Check that the image data is uncompressed, meaning it is all literal
@@ -133,7 +193,7 @@ class PngRandomAccess extends Png_:
     A non-trivial value for this makes the lines depend on each other and
     we cannot access them independently, so we return false in this case.
   */
-  image-data-is-uncompressed_ bytes/ByteArray -> bool:
+  image-data-is-uncompressed_ bytes/ByteArray [block] -> bool:
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
@@ -157,8 +217,7 @@ class PngRandomAccess extends Png_:
             return false  // Some zlib control bytes were chopped up.
           if literal-bytes-left-in-block != 0:
             // Record line position in PNG file.
-            uncompressed-line-offsets_.add y
-            uncompressed-line-offsets_.add (file-offset + chunk-pos)
+            block.call y (file-offset + chunk-pos)
 
             next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
             if next-part-of-block % (byte-width + 1) != 0:
@@ -175,7 +234,7 @@ class PngRandomAccess extends Png_:
             // full size of the intro is 5 bytes.
             if end-of-zlib-stream:
               return true
-            block-bits := chunk.data[chunk_pos] & 7
+            block-bits := chunk.data[chunk-pos] & 7
             if block-bits & 6 != 0:
               return false  // Not uncompressed.
             if block-bits & 1 == 1:
@@ -187,9 +246,6 @@ class PngRandomAccess extends Png_:
               return false
       else:
         // Skip unknown chunks at this stage.
-
-  get-indexed-image-data line/int pixel-data/ByteArray -> none:
-    unreachable
 
 abstract class Png_:
   filename/string?
@@ -226,6 +282,37 @@ abstract class Png_:
     if ihdr.data[10] != 0: throw "Unknown compression method"
     if ihdr.data[11] != 0: throw "Unknown filter method"
     if ihdr.data[12] != 0: throw "Interlaced images not supported"
+    process-bit-depth_ bit-depth color-type
+
+  process-bit-depth_ bit-depth/int color-type/int -> none:
+    if bit-depth < 1 or not bit-depth.is-power-of-two:
+      throw "Invalid bit depth"
+    if color-type == COLOR-TYPE-GRAYSCALE:
+      if bit-depth > 16:
+        throw "Invalid bit depth"
+      pixel-width = bit-depth
+      lookbehind-offset = bit-depth == 16 ? 2 : 1
+    if color-type == COLOR-TYPE-TRUECOLOR:
+      if not 8 <= bit-depth <= 16:
+        throw "Invalid bit depth"
+      pixel-width = 3 * bit-depth
+      lookbehind-offset = pixel-width / 8
+    if color-type == COLOR-TYPE-INDEXED:
+      if bit-depth > 8:
+        throw "Invalid bit depth"
+      pixel-width = bit-depth
+      lookbehind-offset = 1
+    if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+      if not 8 <= bit-depth <= 16:
+        throw "Invalid bit depth"
+      pixel-width = 2 * bit-depth
+      lookbehind-offset = pixel-width / 8
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA:
+      if not 8 <= bit-depth <= 16:
+        throw "Invalid bit depth"
+      pixel-width = 4 * bit-depth
+      lookbehind-offset = pixel-width / 8
+    byte-width = (width * pixel-width + 7) / 8
 
   /**
   Returns a ByteArray describing the palette for the PNG, with
@@ -255,24 +342,26 @@ abstract class Png_:
   Throws an exception if the image is in RGB, RGBA, or gray-with alpha format.
   Guard aginst this by checking whether $color-type returns
     $COLOR-TYPE-TRUECOLOR, $COLOR-TYPE-TRUECOLOR-ALPHA, or
-    $COLOR-TYPE-GREYSCALE-ALPHA.
+    $COLOR-TYPE-GRAYSCALE-ALPHA.
   */
   abstract get-indexed-image-data line/int pixel-data/ByteArray -> none
 
   stringify:
-    color-type-string/string := ?
-    if color-type == COLOR-TYPE-GREYSCALE:
-      color-type-string = "greyscale"
-    else if color-type == COLOR-TYPE-TRUECOLOR:
-      color-type-string = "truecolor"
-    else if color-type == COLOR-TYPE-INDEXED:
-      color-type-string = "indexed"
-    else if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
-      color-type-string = "greyscale with alpha"
-    else:
-      assert: color-type == COLOR-TYPE-TRUECOLOR-ALPHA
-      color-type-string = "truecolor with alpha"
+    color-type-string/string := color-type-to-string color-type
     return "PNG, $(width)x$height, bit depth: $bit-depth, color type: $color-type-string"
+
+color-type-to-string color-type/int -> string:
+  if color-type == COLOR-TYPE-GRAYSCALE:
+    return "grayscale"
+  if color-type == COLOR-TYPE-TRUECOLOR:
+    return "truecolor"
+  if color-type == COLOR-TYPE-INDEXED:
+    return "indexed"
+  if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+    return "grayscale with alpha"
+  else:
+    assert: color-type == COLOR-TYPE-TRUECOLOR-ALPHA
+    return "truecolor with alpha"
 
 abstract class PngDecompressor_ extends Png_:
   image-data/ByteArray? := null
@@ -281,12 +370,10 @@ abstract class PngDecompressor_ extends Png_:
   decompressor_/zlib.CopyingInflater
   done/Latch := Latch
 
-  constructor bytes/ByteArray --filename/string? --convert-to-rgba/bool?:
+  constructor bytes/ByteArray --filename/string?=null --convert-to-rgba/bool?:
     convert-to-rgba_ = convert-to-rgba
     decompressor_ = zlib.CopyingInflater
     super bytes --filename=filename
-    process-bit-depth_ bit-depth color-type
-    byte-width = (width * pixel-width + 7) / 8
     if convert-to-rgba_:
       image-data = ByteArray (4 * width * height)
     else:
@@ -312,35 +399,6 @@ abstract class PngDecompressor_ extends Png_:
       else if chunk.name[0] & 0x20 == 0:
         throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
 
-  process-bit-depth_ bit-depth/int color-type/int -> none:
-    if bit-depth < 1 or not bit-depth.is-power-of-two:
-      throw "Invalid bit depth"
-    if color-type == COLOR-TYPE-GREYSCALE:
-      if bit-depth > 16:
-        throw "Invalid bit depth"
-      pixel-width = bit-depth
-      lookbehind-offset = bit-depth == 16 ? 2 : 1
-    if color-type == COLOR-TYPE-TRUECOLOR:
-      if not 8 <= bit-depth <= 16:
-        throw "Invalid bit depth"
-      pixel-width = 3 * bit-depth
-      lookbehind-offset = pixel-width / 8
-    if color-type == COLOR-TYPE-INDEXED:
-      if bit-depth > 8:
-        throw "Invalid bit depth"
-      pixel-width = bit-depth
-      lookbehind-offset = 1
-    if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
-      if not 8 <= bit-depth <= 16:
-        throw "Invalid bit depth"
-      pixel-width = 2 * bit-depth
-      lookbehind-offset = pixel-width / 8
-    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA:
-      if not 8 <= bit-depth <= 16:
-        throw "Invalid bit depth"
-      pixel-width = 4 * bit-depth
-      lookbehind-offset = pixel-width / 8
-
   handle-palette chunk/Chunk:
     saved-chunks[chunk.name] = chunk.data
     if color-type != COLOR-TYPE-INDEXED:
@@ -351,7 +409,7 @@ abstract class PngDecompressor_ extends Png_:
 
   handle-transparency chunk/Chunk:
     saved-chunks[chunk.name] = chunk.data
-    if color-type == COLOR-TYPE-GREYSCALE:
+    if color-type == COLOR-TYPE-GRAYSCALE:
       value := BIG-ENDIAN.uint16 chunk.data 0
       ensure-alpha-palette_ (value + 1)
       r-transparent_ = value
@@ -371,7 +429,7 @@ abstract class PngDecompressor_ extends Png_:
     if bit-depth <= 8 and palette-a_.size == 0:
       if color-type == COLOR-TYPE-INDEXED:
         palette-a_ = ByteArray (max min-size (1 << bit-depth)): 255
-      else if color-type == COLOR-TYPE-GREYSCALE or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+      else if color-type == COLOR-TYPE-GRAYSCALE or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
         if bit-depth != 16:
           size := 1 << bit-depth
           palette-a_ = ByteArray (max min-size size): 255
@@ -380,7 +438,7 @@ abstract class PngDecompressor_ extends Png_:
     if bit-depth <= 8 and palette_.size == 0:
       if color-type == COLOR-TYPE-INDEXED:
         throw "No palette for indexed image"
-      else if color-type == COLOR-TYPE-GREYSCALE or color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+      else if color-type == COLOR-TYPE-GRAYSCALE or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
         if bit-depth <= 4:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
@@ -449,14 +507,14 @@ abstract class PngDecompressor_ extends Png_:
           image-data[image-data-position_++] = pal[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 8:
-        if color-type == COLOR-TYPE-INDEXED or color-type == COLOR-TYPE-GREYSCALE:
+        if color-type == COLOR-TYPE-INDEXED or color-type == COLOR-TYPE-GRAYSCALE:
           width.repeat:
             index := line[it]
             image-data[image-data-position_++] = pal[index * 3 + 0]
             image-data[image-data-position_++] = pal[index * 3 + 1]
             image-data[image-data-position_++] = pal[index * 3 + 2]
             image-data[image-data-position_++] = palette-a_[index]
-        else if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+        else if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
           width.repeat:
             pix := line[it << 1]
             image-data[image-data-position_++] = pix
@@ -480,7 +538,7 @@ abstract class PngDecompressor_ extends Png_:
           image-data-position_ += width << 2
       else:
         assert: bit-depth == 16
-        if color-type == COLOR-TYPE-GREYSCALE:
+        if color-type == COLOR-TYPE-GRAYSCALE:
           width.repeat:
             value := BIG-ENDIAN.uint16 line (it << 1)
             image-data[image-data-position_++] = value >> 8
@@ -490,7 +548,7 @@ abstract class PngDecompressor_ extends Png_:
               image-data[image-data-position_++] = 0
             else:
               image-data[image-data-position_++] = 255
-        else if color-type == COLOR-TYPE-GREYSCALE-ALPHA:
+        else if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
           width.repeat:
             value := BIG-ENDIAN.uint16 line (it << 2)
             alpha := BIG-ENDIAN.uint16 line ((it << 2) + 2)
