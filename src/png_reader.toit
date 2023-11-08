@@ -142,6 +142,9 @@ class PngInfo extends PngScanner_:
     uncompressed-size := byte-width * height
     return (bytes.size.to-float * 100) / uncompressed-size
 
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    unreachable
+
 /**
 A PNG reader that gives random access to the decompressed pixel data.  Bit
   widths other than 8 are expanded/truncated on demand.
@@ -168,9 +171,6 @@ class PngRandomAccess extends PngScanner_:
 
     if not uncompressed:
       throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
-
-  get-indexed-image-data line/int pixel-data/ByteArray -> none:
-    unreachable  // TODO.
 
   get-indexed-image-data line/int pixel-data/ByteArray -> none:
     throw "not implemented"
