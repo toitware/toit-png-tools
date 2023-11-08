@@ -90,8 +90,6 @@ unzip parsed -> none:
     writer.write-uncompressed buffer[0..bytes-per-line * block-height]
   writer.close
 
-  exit 1
-
 /// Maps all non-zero bytes to the brightest possible value.
 MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 

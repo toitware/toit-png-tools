@@ -33,9 +33,20 @@ ADD_TOIT_EXE(
   ""
 )
 
+set(PNGINFO_SOURCE "${CMAKE_CURRENT_LIST_DIR}/pnginfo.toit")
+set(PNGINFO_EXE "${CMAKE_BINARY_DIR}/pnginfo${CMAKE_EXECUTABLE_SUFFIX}")
+set(PNGINFO_DEP "${CMAKE_CURRENT_BINARY_DIR}/pnginfo.dep")
+
+ADD_TOIT_EXE(
+  ${PNGINFO_SOURCE}
+  ${PNGINFO_EXE}
+  ${PNGINFO_DEP}
+  ""
+)
+
 add_custom_target(
   build_binaries
-  DEPENDS ${PNGDIFF_EXE} ${PNGUNZIP_EXE}
+  DEPENDS ${PNGDIFF_EXE} ${PNGUNZIP_EXE} ${PNGINFO_EXE}
 )
 
 add_dependencies(build build_binaries)
