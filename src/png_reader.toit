@@ -35,6 +35,9 @@ class PngRgba extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --convert-to-rgba
 
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    throw "Palette image data is not available from PngRgba"
+
 /**
 A PNG reader that converts all PNG files into
   a decompressed format with the bit depths
@@ -43,6 +46,52 @@ A PNG reader that converts all PNG files into
 class Png extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --no-convert-to-rgba
+
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+      throw "PNG is not palette or grayscale"
+    index := line * byte-width
+    source := image-data[index .. index + byte-width]
+    if bit-depth == 16:
+      throw "PNG is 16 bit per pixel"
+    else if bit-depth == 8:
+      pixel-data.replace 0 source
+    else if bit-depth == 4:
+      bytemap-zap pixel-data 0
+      blit
+          source
+          pixel-data        // Destination.
+          (width + 1) >> 1  // Pixels per line.
+          --shift=4         // Shift right 4 bits.
+          --mask=0xf        // Mask out the lower 4 bits.
+          --destination-pixel-stride=2
+      blit
+          source[1..]
+          pixel-data        // Destination.
+          width >> 1        // Pixels per line.
+          --mask=0xf        // Mask out the upper 4 bits.
+          --destination-pixel-stride=2
+    else if bit-depth == 2:
+      bytemap-zap pixel-data 0
+      4.repeat: | shift |
+        blit
+            source
+            pixel-data[shift..]                // Destination.
+            (width + 3 - shift) >> 2           // Pixels per line.
+            --shift="\x06\x04\x02\x00"[shift]  // Shift right 6, 4, 2, 0 bits.
+            --mask=0x3                         // Mask out the other 6 bits.
+            --destination-pixel-stride=4
+    else:
+      assert: bit-depth == 1
+      bytemap-zap pixel-data 0
+      8.repeat: | shift |
+        blit
+            source
+            pixel-data[shift..]                // Destination.
+            (width + 7 - shift) >> 3           // Pixels per line.
+            --shift="\x07\x06\x05\x04\x03\x02\x02\x00"[shift]
+            --mask=1                           // Mask out the other 6 bits.
+            --destination-pixel-stride=8
 
 /**
 Scans a Png file for useful information, without decompressing the image data.
@@ -92,6 +141,39 @@ class PngInfo extends PngScanner_:
   compression-ratio -> float:
     uncompressed-size := byte-width * height
     return (bytes.size.to-float * 100) / uncompressed-size
+
+/**
+A PNG reader that gives random access to the decompressed pixel data.  Bit
+  widths other than 8 are expanded/truncated on demand.
+
+Available formats are 8-bit palette (with alpha, and 32-bit RGBA.  Grayscale
+  and palette with 1/2/4 bits per pixel are delivered as 8-bit palette.
+
+The PNG must be uncompressed to give random access.  Such PNGs are created by
+  the pngunzip tool from this repository - see
+  https://github.com/toitware/toit-png-tools/releases.
+*/
+class PngRandomAccess extends PngScanner_:
+  // A sequence of y-coordinates and file positions for uncompressed lines.
+  // The uncompressed data includes a filter byte for each line, which
+  // must always be 0 (no predictor).
+  uncompressed-line-offsets_ := []
+
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename
+    process-bit-depth_ bit-depth color-type
+    uncompressed := image-data-is-uncompressed_ bytes: | y offset |
+      uncompressed-line-offsets_.add y
+      uncompressed-line-offsets_.add offset
+
+    if not uncompressed:
+      throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
+
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    unreachable  // TODO.
+
+  get-indexed-image-data line/int pixel-data/ByteArray -> none:
+    throw "not implemented"
 
 abstract class PngScanner_ extends Png_:
   constructor bytes/ByteArray --filename/string?=null:
@@ -249,6 +331,20 @@ abstract class Png_:
   */
   alpha-palette -> ByteArray:
     return palette-a_
+
+  /**
+  Writes the image data for the given line into the two byte arrays
+    provided.  One byte per pixel is written into $pixel-data.
+  The pixel data should be read in connection with $palette.
+  In compressed PNGs this method may cause a lot of image data to be
+    decompressed, especially if this method is not called in order
+    of non-descending $line.
+  Throws an exception if the image is in RGB, RGBA, or gray-with alpha format.
+  Guard aginst this by checking whether $color-type returns
+    $COLOR-TYPE-TRUECOLOR, $COLOR-TYPE-TRUECOLOR-ALPHA, or
+    $COLOR-TYPE-GRAYSCALE-ALPHA.
+  */
+  abstract get-indexed-image-data line/int pixel-data/ByteArray -> none
 
   stringify:
     color-type-string/string := color-type-to-string color-type
