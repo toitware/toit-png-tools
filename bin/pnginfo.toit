@@ -110,6 +110,7 @@ dump parsed -> none:
   map["width"] = png.width
   map["height"] = png.height
   map["color_type"] = png.color-type
+  map["bit_depth"] = png.bit-depth
   map["color_type_string"] = color-type-to-string png.color-type
   map["compression_ratio"] = png.compression-ratio
   map["compression_ratio_rgb"] = png.compression-ratio-rgb
