@@ -46,6 +46,15 @@ main args/List:
               --short-name="h"
               --default=false
               --short-help="Print the width of the image in pixels, and nothing else",
+          cli.Option "chunk"
+              --short-name="c"
+              --default=null
+              --short-help="Dump the contents of the named chunk and nothing else"
+              --type="string",
+          cli.Flag "all-chunks"
+              --short-name="a"
+              --default=false
+              --short-help="Dump the contents of all non-required chunks",
           cli.Flag "random-access"
               --short-name="r"
               --default=false
@@ -106,6 +115,8 @@ dump parsed -> none:
       exit 1
     unreachable
 
+  json-format := parsed["json"]
+
   map := {:}
   map["width"] = png.width
   map["height"] = png.height
@@ -117,8 +128,14 @@ dump parsed -> none:
   map["compression_ratio_rgba"] = png.compression-ratio-rgba
   map["bytes_per_line"] = png.byte-width
   map["uncompressed_random_access"] = png.uncompressed-random-access
+  if parsed["all-chunks"]:
+    png.saved-chunks.do: | name data |
+      map[name] = json-format ? (List data.size: data[it]) : data
+  else if parsed["chunk"]:
+    png.saved-chunks.get parsed["chunk"] --if-present=: | data |
+      map[parsed["chunk"]] = (json-format ? (List data.size: data[it]) : data)
 
-  if parsed["json"]:
+  if json-format:
     out-stream.write (json.encode map)
     out-stream.write "\n"
     return

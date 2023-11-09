@@ -101,7 +101,7 @@ class PngInfo extends PngScanner_:
 
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
-    uncompressed_ = image-data-is-uncompressed_ bytes: null
+    uncompressed_ = image-data-is-uncompressed_ bytes --save-chunks: null
 
   /**
   Returns true if the image data in the PNG is uncompressed, and all
@@ -193,7 +193,7 @@ abstract class PngScanner_ extends Png_:
     A non-trivial value for this makes the lines depend on each other and
     we cannot access them independently, so we return false in this case.
   */
-  image-data-is-uncompressed_ bytes/ByteArray [block] -> bool:
+  image-data-is-uncompressed_ bytes/ByteArray --save-chunks/bool=false [block] -> bool:
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
@@ -244,8 +244,8 @@ abstract class PngScanner_ extends Png_:
             if literal-bytes-left-in-block % (byte-width + 1) != 0:
               // Zlib literal block size and line width don't match.
               return false
-      else:
-        // Skip unknown chunks at this stage.
+      else if save-chunks:
+        saved-chunks[chunk.name] = chunk.data
 
 abstract class Png_:
   filename/string?
