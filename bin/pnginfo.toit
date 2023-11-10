@@ -67,6 +67,7 @@ main args/List:
       --rest=[
           cli.Option "file"
               --required
+              --multi
               --short-help="PNG file input."
               --type="file",
           ]
@@ -87,7 +88,12 @@ dump parsed -> none:
     parsed.usage
     exit 1
 
-  file-name := parsed["file"]
+  for i := 0; i < parsed["file"].size; i++:
+    file-name := parsed["file"][i]
+    dump file-name parsed (i == 0)
+
+dump file-name/string parsed is-first/bool -> none:
+  if not is-first: print
   debug/bool := parsed["debug-stack-traces"]
 
   png := slurp-file file-name --debug=debug
@@ -118,6 +124,7 @@ dump parsed -> none:
   json-format := parsed["json"]
 
   map := {:}
+  map["filename"] = file-name
   map["width"] = png.width
   map["height"] = png.height
   map["color_type"] = png.color-type
