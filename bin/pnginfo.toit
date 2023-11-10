@@ -7,7 +7,7 @@ import host.file
 import host.pipe
 import encoding.json
 import reader show BufferedReader
-import png-tools.png-reader show PngInfo color-type-to-string
+import png-tools.png-reader show *
 import png-tools.png-writer show PngWriter
 import .version
 
@@ -59,6 +59,10 @@ main args/List:
               --short-name="r"
               --default=false
               --short-help="Print whether the PNG file has uncompressed random access pixel data",
+          cli.Flag "show-image-data"
+              --short-name="s"
+              --default=false
+              --short-help="Use terminal graphics to show the image data",
           cli.Flag "debug-stack-traces"
               --short-name="d"
               --default=false
@@ -96,7 +100,8 @@ dump file-name/string parsed is-first/bool -> none:
   if not is-first: print
   debug/bool := parsed["debug-stack-traces"]
 
-  png := slurp-file file-name --debug=debug
+  pngs := slurp-file file-name --debug=debug --include-image-data=parsed["show-image-data"]
+  png/PngInfo := pngs[0]
 
   out-stream := parsed["out"] == "-" ?
       pipe.stdout :
@@ -157,7 +162,126 @@ dump file-name/string parsed is-first/bool -> none:
 
   out-stream.write "PNG file: $(png.width)x$png.height\n$(properties.join "\n")\n"
 
-slurp-file file-name/string --debug/bool -> PngInfo:
+  if parsed["show-image-data"]:
+    show-image-data pngs[1] out-stream
+
+// Terminals have a way to print approximately square pixels using "▀"
+// and background and foreground colors.
+
+class Pixel:
+  r/int
+  g/int
+  b/int
+  a/int
+
+  constructor .r .g .b .a:
+
+  mix odd/bool [block] -> none:
+    chess := odd ? 0x9b : 0xbb
+    mixed-r := (a * r + chess * (256 - a)) >> 8
+    mixed-g := (a * g + chess * (256 - a)) >> 8
+    mixed-b := (a * b + chess * (256 - a)) >> 8
+    block.call mixed-r mixed-g mixed-b
+
+class Terminal:
+  bg-r := -1
+  bg-g := -1
+  bg-b := -1
+  fg-r := -1
+  fg-g := -1
+  fg-b := -1
+
+  writer := ?
+
+  constructor .writer:
+
+  reset -> none:
+    bg-r = -1
+    bg-g = -1
+    bg-b = -1
+    fg-r = -1
+    fg-g = -1
+    fg-b = -1
+
+  has-fg pixel/Pixel odd/bool -> bool:
+    pixel.mix odd: | r g b |
+      return r == fg-r and g == fg-b and b == fg-b
+    unreachable
+
+  has-bg pixel/Pixel odd/bool -> bool:
+    pixel.mix odd: | r g b |
+      return r == bg-r and g == bg-b and b == bg-b
+    unreachable
+
+  set-fg pixel/Pixel odd/bool -> none:
+    pixel.mix odd: | r g b |
+      if r != fg-r or g != fg-b or b != fg-b:
+        writer.write "\x1b[38;2;$r;$g;$(b)m"
+        fg-r = r
+        fg-g = g
+        fg-b = b
+
+  set-bg pixel/Pixel odd/bool -> none:
+    pixel.mix odd: | r g b |
+      if r != bg-r or g != bg-b or b != bg-b:
+        writer.write "\x1b[48;2;$r;$g;$(b)m"
+        bg-r = r
+        bg-g = g
+        bg-b = b
+
+show-image-data png/PngRgba out-stream -> none:
+  width := png.width
+  height := png.height
+  data := png.image-data
+
+  terminal := Terminal out-stream
+
+  y := png.height & 1
+
+  index := 0
+
+  if y == 1:
+    // Start with odd line.
+    for i := 0; i < png.width; i++:
+      r := data[index++]
+      g := data[index++]
+      b := data[index++]
+      a := data[index++]
+      pixel := Pixel r g b a
+      odd := i & 1 != 0
+      if not terminal.has-fg pixel odd:
+        terminal.set-fg pixel odd
+      out-stream.write "▄"
+    out-stream.write "\x1b[0m\n"
+    terminal.reset
+
+  pixels := List width
+  for ; y < height; y += 2:
+    for i := 0; i < png.width; i++:
+      r := data[index++]
+      g := data[index++]
+      b := data[index++]
+      a := data[index++]
+      pixel := Pixel r g b a
+      pixels[i] = pixel
+    for i := 0; i < png.width; i++:
+      r := data[index++]
+      g := data[index++]
+      b := data[index++]
+      a := data[index++]
+      pixel := Pixel r g b a
+      odd := i & 1 != 0
+      if (terminal.has-fg pixels[i] (not odd)) and
+          (terminal.has-bg pixel odd):
+        out-stream.write "▀"
+      else:
+        terminal.set-bg pixels[i] (not odd)
+        terminal.set-fg pixel odd
+        out-stream.write "▄"
+    terminal.reset
+    out-stream.write "\x1b[0m\n"
+
+slurp-file file-name/string --debug/bool --include-image-data/bool=false -> List:
   error := catch --unwind=debug:
     reader := BufferedReader
         file-name == "-" ?
@@ -165,8 +289,9 @@ slurp-file file-name/string --debug/bool -> PngInfo:
             file.Stream.for-read file-name
     reader.buffer-all
     content := reader.read-bytes reader.buffered
-    png := PngInfo content
-    return png
+    info := PngInfo content
+    if not include-image-data: return [info]
+    return [info, PngRgba content]
   if error:
     if error == "OUT_OF_BOUNDS":
       pipe.stderr.write "$file-name: Broken PNG file.\n"
