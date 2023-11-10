@@ -163,10 +163,54 @@ class PngRandomAccess extends PngScanner_:
     if not uncompressed:
       throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
 
+  /**
+  The block is called with the arguments line-from, line-to, bits-per-pixel,
+    pixel-byte-array, line-stride.  bits-per-pixel is always 1 or 8
+  It may be called multiple times.  The byte array may be larger than
+    needed, and the caller should only use the first line-to - line-from..
+  The caller uses non-local return to stop the scan.
+  */
   get-indexed-image-data line/int [block] -> none:
-    throw "not implemented"
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+      throw "PNG is not palette or grayscale"
+    if bit-depth == 16:
+      throw "PNG is 16 bit per pixel"
+    offsets := uncompressed-line-offsets_
+    bytes-per-line := byte-width + 1  // Because of the filter byte.
+    buffer-height := min 1 (4096 / width)
+    buffer := null
+    // Although the PNG is uncompressed, the image data may not be contiguous
+    // since the zlib blocks have a maximum size.  Find the correct block for
+    // the first line.
+    for i := 0; i < offsets.size; i += 2:
+      top := max line offsets[i]
+      bottom := i + 2 == offsets.size ? height : offsets[i + 2]
+      if top >= bottom: continue
+      index := uncompressed-line-offsets_[i + 1] - top * bytes-per-line
+      if bit-depth == 8 or bit-depth == 1:
+        source := bytes[index + 1 + top * bytes-per-line .. index + bottom * bytes-per-line]
+        block.call top bottom bit-depth source bytes-per-line
+        return
+      if not buffer: buffer = ByteArray (buffer-height * width)
+      List.chunk-up top bottom buffer-height: | y-from y-to height |
+        source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
+        bytemap-zap buffer 0
+        expansion := 8 / bit-depth
+        mask := (1 << bit-depth) - 1
+        shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
+        expansion.repeat: | shift |
+          blit
+              source
+              buffer[shift..]                              // Destination.
+              (width + expansion - 1 - shift) / expansion  // Pixels per line.
+              --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
+              --mask=mask                                  // Mask out the other 6 bits.
+              --source-line-stride=bytes-per-line
+              --destination-pixel-stride=expansion
+              --destination-line-stride=width
+        block.call y-from y-to 8 buffer width
 
-abstract class PngScanner_ extends Png_:
+abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
 
@@ -196,6 +240,8 @@ abstract class PngScanner_ extends Png_:
         pos = position-after-chunk
         file-offset = chunk-data-position
       if chunk.name == "IDAT":
+        ensure-alpha-palette_ (1 << bit-depth)
+        ensure-rgb-palette_ (1 << bit-depth)
         chunk-pos := 0
         // A chunk of zlib-encoded data.  Check to see if it's actually
         // uncompressed data.
@@ -224,7 +270,8 @@ abstract class PngScanner_ extends Png_:
             // Next zlib block has a 3-bit intro.  If it's a literal block, the
             // full size of the intro is 5 bytes.
             if end-of-zlib-stream:
-              return true
+              chunk-pos += 4  // Skip checksum bytes.
+              continue
             block-bits := chunk.data[chunk-pos] & 7
             if block-bits & 6 != 0:
               return false  // Not uncompressed.
@@ -235,10 +282,17 @@ abstract class PngScanner_ extends Png_:
             if literal-bytes-left-in-block % (byte-width + 1) != 0:
               // Zlib literal block size and line width don't match.
               return false
-      else if save-chunks:
-        saved-chunks[chunk.name] = chunk.data
+      else:
+        if chunk.name == "PLTE":
+          handle-palette chunk
+        else if chunk.name == "tRNS":
+          handle-transparency chunk
+        else if chunk.name == "IEND":
+          return true
+        if save-chunks:
+          saved-chunks[chunk.name] = chunk.data
 
-abstract class Png_:
+abstract class AbstractPng:
   filename/string?
   bytes/ByteArray
   width/int
@@ -341,55 +395,6 @@ abstract class Png_:
     color-type-string/string := color-type-to-string color-type
     return "PNG, $(width)x$height, bit depth: $bit-depth, color type: $color-type-string"
 
-color-type-to-string color-type/int -> string:
-  if color-type == COLOR-TYPE-GRAYSCALE:
-    return "grayscale"
-  if color-type == COLOR-TYPE-TRUECOLOR:
-    return "truecolor"
-  if color-type == COLOR-TYPE-INDEXED:
-    return "indexed"
-  if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
-    return "grayscale with alpha"
-  else:
-    assert: color-type == COLOR-TYPE-TRUECOLOR-ALPHA
-    return "truecolor with alpha"
-
-abstract class PngDecompressor_ extends Png_:
-  image-data/ByteArray? := null
-  image-data-position_/int := 0
-  convert-to-rgba_/bool
-  decompressor_/zlib.CopyingInflater
-  done/Latch := Latch
-
-  constructor bytes/ByteArray --filename/string?=null --convert-to-rgba/bool?:
-    convert-to-rgba_ = convert-to-rgba
-    decompressor_ = zlib.CopyingInflater
-    super bytes --filename=filename
-    if convert-to-rgba_:
-      image-data = ByteArray (4 * width * height)
-    else:
-      image-data = ByteArray (byte-width * height)
-    previous-line_ = ByteArray byte-width
-    task:: write-image-data
-    while true:
-      chunk := Chunk bytes pos : pos = it
-      if chunk.name == "PLTE":
-        handle-palette chunk
-      else if chunk.name == "tRNS":
-        handle-transparency chunk
-      else if chunk.name == "IDAT":
-        ensure-alpha-palette_ (1 << bit-depth)
-        ensure-rgb-palette_ (1 << bit-depth)
-        handle-image-data chunk
-      else if chunk.name == "IEND":
-        if pos != bytes.size:
-          throw "Trailing data after IEND" + (filename ? ": $filename" : "")
-        decompressor_.close
-        done.get
-        break
-      else if chunk.name[0] & 0x20 == 0:
-        throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
-
   handle-palette chunk/Chunk:
     saved-chunks[chunk.name] = chunk.data
     if color-type != COLOR-TYPE-INDEXED:
@@ -434,6 +439,55 @@ abstract class PngDecompressor_ extends Png_:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
           palette_ = ByteArray (size * 3): (it / 3) * factor
+
+color-type-to-string color-type/int -> string:
+  if color-type == COLOR-TYPE-GRAYSCALE:
+    return "grayscale"
+  if color-type == COLOR-TYPE-TRUECOLOR:
+    return "truecolor"
+  if color-type == COLOR-TYPE-INDEXED:
+    return "indexed"
+  if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+    return "grayscale with alpha"
+  else:
+    assert: color-type == COLOR-TYPE-TRUECOLOR-ALPHA
+    return "truecolor with alpha"
+
+abstract class PngDecompressor_ extends AbstractPng:
+  image-data/ByteArray? := null
+  image-data-position_/int := 0
+  convert-to-rgba_/bool
+  decompressor_/zlib.CopyingInflater
+  done/Latch := Latch
+
+  constructor bytes/ByteArray --filename/string?=null --convert-to-rgba/bool?:
+    convert-to-rgba_ = convert-to-rgba
+    decompressor_ = zlib.CopyingInflater
+    super bytes --filename=filename
+    if convert-to-rgba_:
+      image-data = ByteArray (4 * width * height)
+    else:
+      image-data = ByteArray (byte-width * height)
+    previous-line_ = ByteArray byte-width
+    task:: write-image-data
+    while true:
+      chunk := Chunk bytes pos : pos = it
+      if chunk.name == "PLTE":
+        handle-palette chunk
+      else if chunk.name == "tRNS":
+        handle-transparency chunk
+      else if chunk.name == "IDAT":
+        ensure-alpha-palette_ (1 << bit-depth)
+        ensure-rgb-palette_ (1 << bit-depth)
+        handle-image-data chunk
+      else if chunk.name == "IEND":
+        if pos != bytes.size:
+          throw "Trailing data after IEND" + (filename ? ": $filename" : "")
+        decompressor_.close
+        done.get
+        break
+      else if chunk.name[0] & 0x20 == 0:
+        throw "Unknown chunk $chunk.name" + (filename ? ": $filename" : "")
 
   handle-image-data chunk/Chunk:
     bytes-written := 0
