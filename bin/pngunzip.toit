@@ -43,6 +43,18 @@ main args/List:
               --short-name="d"
               --default=false
               --short-help="Dump developer-friendly stack traces on error.",
+          cli.Flag "preserve"
+              --short-name="p"
+              --default=false
+              --short-help="Preserve all chunks",
+          cli.Option "preserve-chunk"
+              --multi
+              --short-help="Preserve a named chunk (can be repeated)."
+              --type="string",
+          cli.Option "override-chunk"
+              --multi
+              --short-help="Override a named chunk (can be repeated)."
+              --type="string",
           ]
       --rest=[
           cli.Option "file"
@@ -57,6 +69,13 @@ unzip parsed -> none:
   if parsed["version"]:
     print "pngunzip $PNGDIFF-VERSION"
     return
+
+  overridden-chunks := parse-overrides parsed["override-chunk"]
+  if not overridden-chunks:
+    pipe.stderr.write "Invalid override chunk.\n"
+    pipe.stderr.write "  Format: --override-chunk=NAME=VALUE\n"
+    pipe.stderr.write "  Format: --override-chunk=#[0x00, 0x01, 0x02]\n"
+    exit 1
 
   file-name := parsed["file"]
   debug/bool := parsed["debug-stack-traces"]
@@ -88,10 +107,22 @@ unzip parsed -> none:
         invert-bits = true
         replacement-trns = #[0, 0]
 
-  ["PLTE", "tRNS"].do: | name |
-    png.saved-chunks.get name --if-present=: | data |
-      if name == "tRNS" and invert-bits: data = replacement-trns
-      if name == "PLTE" and invert-bits: data = data[3..6] + data[0..3]
+  preserved-chunks/Set := {"PLTE", "tRNS"}
+  if parsed["preserve"]:
+    png.saved-chunks.do: | name |
+      if name[3] & 0x20 != 0:  // Safe-to-copy chunk.
+  parsed["preserve-chunk"].do: | name |
+    if name.size != 4: throw "Invalid chunk name: '$name'."
+    preserved-chunks.add name
+  overridden-chunks.do: | name data |
+    preserved-chunks.add name
+  preserved-chunks.do: | name |
+    data := png.saved-chunks.get name
+    if name == "tRNS" and invert-bits: data = replacement-trns
+    if name == "PLTE" and invert-bits: data = data[3..6] + data[0..3]
+    overridden-chunks.get name --if-present=: | overridden-data |
+      data = overridden-data
+    if data:
       writer.write-chunk name data
 
   bytes-per-line := png.byte-width + 1
@@ -136,3 +167,27 @@ slurp-file file-name/string --debug/bool -> Png:
       pipe.stderr.write "$file-name: $error.\n"
     exit 1
   unreachable
+
+parse-overrides overrides/List -> Map?:
+  result := {:}
+  overrides.do: | override |
+    parts := (override.split "=")
+    if parts.size != 2: return null
+    name := parts[0]
+    value := parts[1]
+    if name.size != 4: return null
+    if value.starts-with "#[":
+      if not value.ends-with "]": return null
+      bytes := (value[2 .. value.size - 1].split ",").map:
+        byte-string := it.trim
+        byte := ?
+        if byte-string.starts-with "0x" or byte-string.starts-with "0X":
+          byte = int.parse --radix=16 byte-string[2..] --on-error=: return null
+        else:
+          byte = int.parse byte-string --on-error=: return null
+        if not 0 <= byte < 256: return null
+        byte  // Return value of block.
+      result[name] = ByteArray bytes.size: bytes[it]
+    else:
+      result[name] = value
+  return result
