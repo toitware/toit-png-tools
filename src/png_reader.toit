@@ -378,11 +378,11 @@ abstract class PngDecompressor_ extends Png_:
       else if filter != PREDICTOR-NONE_:
         throw "Unknown filter type: $filter"
       previous-line_ = line
-      pal := ?
+      palette := ?
       if palette_.size != 0:
-        pal = palette_
+        palette = palette_
       else:
-        pal = ByteArray 768: it / 3
+        palette = ByteArray 768: it / 3
 
       if not convert-to-rgba_:
         image-data.replace image-data-position_ line
@@ -392,31 +392,31 @@ abstract class PngDecompressor_ extends Png_:
       if bit-depth == 1:
         width.repeat:
           index := (line[it >> 3] >> (7 - (it & 7))) & 1
-          image-data[image-data-position_++] = pal[index * 3 + 0]
-          image-data[image-data-position_++] = pal[index * 3 + 1]
-          image-data[image-data-position_++] = pal[index * 3 + 2]
+          image-data[image-data-position_++] = palette[index * 3 + 0]
+          image-data[image-data-position_++] = palette[index * 3 + 1]
+          image-data[image-data-position_++] = palette[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 2:
         width.repeat:
           index := (line[it >> 2] >> (6 - ((it & 3) << 1))) & 3
-          image-data[image-data-position_++] = pal[index * 3 + 0]
-          image-data[image-data-position_++] = pal[index * 3 + 1]
-          image-data[image-data-position_++] = pal[index * 3 + 2]
+          image-data[image-data-position_++] = palette[index * 3 + 0]
+          image-data[image-data-position_++] = palette[index * 3 + 1]
+          image-data[image-data-position_++] = palette[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 4:
         width.repeat:
           index := (line[it >> 1] >> (4 - ((it & 1) << 2))) & 0xf
-          image-data[image-data-position_++] = pal[index * 3 + 0]
-          image-data[image-data-position_++] = pal[index * 3 + 1]
-          image-data[image-data-position_++] = pal[index * 3 + 2]
+          image-data[image-data-position_++] = palette[index * 3 + 0]
+          image-data[image-data-position_++] = palette[index * 3 + 1]
+          image-data[image-data-position_++] = palette[index * 3 + 2]
           image-data[image-data-position_++] = palette-a_[index]
       else if bit-depth == 8:
         if color-type == COLOR-TYPE-INDEXED or color-type == COLOR-TYPE-GRAYSCALE:
           width.repeat:
             index := line[it]
-            image-data[image-data-position_++] = pal[index * 3 + 0]
-            image-data[image-data-position_++] = pal[index * 3 + 1]
-            image-data[image-data-position_++] = pal[index * 3 + 2]
+            image-data[image-data-position_++] = palette[index * 3 + 0]
+            image-data[image-data-position_++] = palette[index * 3 + 1]
+            image-data[image-data-position_++] = palette[index * 3 + 2]
             image-data[image-data-position_++] = palette-a_[index]
         else if color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
           width.repeat:

@@ -9,9 +9,11 @@ import host.pipe
 import encoding.json
 import png-tools.png-reader show *
 
+OUTPUT-DIR ::= "tests/out"
+
 main args/List:
-  if not file.is-directory "tests/out":
-    mkdir "tests/out"
+  if not file.is-directory OUTPUT-DIR:
+    mkdir OUTPUT-DIR
   dir := DirectoryStream "tests/third_party/pngsuite/png"
   counter := 0
   while filename := dir.next:
@@ -23,19 +25,19 @@ main args/List:
       print "$counter: $filename"
       counter++
       path := "tests/third_party/pngsuite/png/$filename"
-      args1 := ["./build/pngunzip", "-o", "tests/out/unzip-$filename", path]
+      args1 := ["./build/pngunzip", "-o", "$OUTPUT-DIR/unzip-$filename", path]
       print "Running $(args1.join " ")"
       exit-value := pipe.run-program args1
       if exit-value != 0: throw "pngunzip failed with exit code $exit-value"
 
       // Check that uncompressing the PNGs did not change them.
-      args2 := ["./build/pngdiff", path, "tests/out/unzip-$filename"]
+      args2 := ["./build/pngdiff", path, "$OUTPUT-DIR/unzip-$filename"]
       print "Running $(args2.join " ")"
       exit-value = pipe.run-program args2
       if exit-value != 0: throw "pngdiff failed with exit code $exit-value"
 
       // Check that the unzipped PNGs are now random access.
-      args3 := ["./build/pnginfo", "--random-access", "tests/out/unzip-$filename"]
+      args3 := ["./build/pnginfo", "--random-access", "$OUTPUT-DIR/unzip-$filename"]
       print "Running $(args3.join " ")"
       exit-value = pipe.run-program args3
       if exit-value != 0: throw "pnginfo failed with exit code $exit-value"
