@@ -2,18 +2,14 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import binary
 import binary show BIG-ENDIAN
 import bitmap
 import cli
-import crypto.crc show *
 import host.file
 import host.pipe
-import monitor show Latch
 import reader show BufferedReader
-import png-tools show Png
+import png-tools.png-reader show PngRgba
 import png-tools.png-writer show PngWriter
-import zlib
 import .version
 
 main args/List:
@@ -55,6 +51,10 @@ main args/List:
               --default=null
               --short-help="Output (default: no output file)."
               --type="file",
+          cli.Flag "three-way"
+              --short-name="t"
+              --default=false
+              --short-help="Creates a three-way diff image, with the difference on top left, the first image in center, and the second image on the right.",
           cli.Flag "version"
               --short-name="v"
               --default=false
@@ -178,18 +178,42 @@ diff parsed -> none:
         --operation=bitmap.OR
         --lookup-table=MAX-OUT
 
-  writer := PngWriter out-stream png1.width png1.height
-  List.chunk-up 0 diff-image.size (png1.width * 4): | from to length |
-    writer.write-uncompressed #[0]  // Filter type 0.
-    writer.write-uncompressed diff-image[from..to]
-  writer.close
+  if parsed["three-way"]:
+    diff-width := png1.width * 3
+    image-data := ByteArray (diff-width * png1.height * 4)
+    bitmap.blit
+        diff-image
+        image-data
+        png1.width * 4
+        --destination-line-stride=(diff-width * 4)
+    bitmap.blit
+        png1.image-data
+        image-data[png1.width * 4..]
+        png1.width * 4
+        --destination-line-stride=(diff-width * 4)
+    bitmap.blit
+        png2.image-data
+        image-data[png1.width * 8..]
+        png1.width * 4
+        --destination-line-stride=(diff-width * 4)
+    writer := PngWriter out-stream diff-width png1.height
+    List.chunk-up 0 image-data.size (diff-width * 4): | from to length |
+      writer.write-uncompressed #[0]  // Filter type 0.
+      writer.write-uncompressed image-data[from..to]
+    writer.close
+  else:
+    writer := PngWriter out-stream png1.width png1.height
+    List.chunk-up 0 diff-image.size (png1.width * 4): | from to length |
+      writer.write-uncompressed #[0]  // Filter type 0.
+      writer.write-uncompressed diff-image[from..to]
+    writer.close
 
   exit 1
 
 /// Maps all non-zero bytes to the brightest possible value.
 MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 
-slurp-file file-name/string --debug/bool -> Png:
+slurp-file file-name/string --debug/bool -> PngRgba:
   error := catch --unwind=debug:
     reader := BufferedReader
         file-name == "-" ?
@@ -197,7 +221,7 @@ slurp-file file-name/string --debug/bool -> Png:
             file.Stream.for-read file-name
     reader.buffer-all
     content := reader.read-bytes reader.buffered
-    png := Png content
+    png := PngRgba content
     return png
   if error:
     if error == "OUT_OF_BOUNDS":

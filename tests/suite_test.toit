@@ -21,7 +21,7 @@ main:
       counter++
       path := "tests/third_party/pngsuite/png/$filename"
       png-bytes := file.read-content path
-      png := Png png-bytes --filename=path
+      png := PngRgba png-bytes --filename=path
       print png
       root := filename[..filename.size - 4]
       json-file := "tests/third_party/pngsuite/json/$(root).json"
@@ -36,5 +36,5 @@ main:
       byte-array.size.repeat:
         if byte-array[it] != png.image-data[it]:
           print "$filename differ at byte $it: expected 0x$(%02x byte-array[it]), got 0x$(%02x png.image-data[it])"
-          return
+          throw "No match"
       expect-equals byte-array      png.image-data

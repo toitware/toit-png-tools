@@ -33,7 +33,7 @@ class PngWriter:
         zlib.Encoder --level=compression-level :
         run-length-encoding ?
             zlib.RunLengthZlibEncoder :
-            zlib.UncompressedZlibEncoder
+            zlib.UncompressedZlibEncoder --no-split-writes
     done_ = Latch
 
     write_ HEADER
@@ -75,7 +75,8 @@ class PngWriter:
       else:
         write-chunk "IDAT" data
     if compressed-data_:
-      write-chunk "IDAT" compressed-data_.bytes
+      bytes := compressed-data_.bytes
+      write-chunk "IDAT" bytes
     write-chunk "IEND" #[]
     done_.set null
 
