@@ -301,6 +301,7 @@ abstract class AbstractPng:
   color-type/int
   pos := 0
   palette_/ByteArray := #[]
+  gray-palette_/ByteArray? := null
   saved-chunks/Map := {:}
   palette-a_/ByteArray := #[]
   r-transparent_/int? := null
@@ -367,6 +368,21 @@ abstract class AbstractPng:
   */
   palette -> ByteArray:
     return palette_
+
+  gray-palette -> ByteArray:
+    if not gray-palette_:
+      if palette_.size == 0:
+        gray-palette_ = #[]
+      else:
+        gray-palette_ = ByteArray (palette_.size - 2):
+          if it % 3 == 0:
+            r := palette_[it]
+            g := palette_[it + 1]
+            b := palette_[it + 2]
+            (r * 77 + g * 150 + b * 29) >> 8
+          else:
+            0
+    return gray-palette_
 
   /**
   Returns a ByteArray describing the alpha-palette for the PNG, with
