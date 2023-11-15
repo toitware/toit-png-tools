@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import binary show BIG-ENDIAN byte-swap-32 LITTLE-ENDIAN
+import bitmap
 import bitmap show blit bytemap-zap
 import bytes show Buffer
 import crypto.crc show *
@@ -35,8 +36,23 @@ class PngRgba extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --convert-to-rgba
 
-  get-indexed-image-data line/int [block] -> none:
+  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
     throw "Palette image data is not available from PngRgba"
+
+blit-map-cache_ := Map.weak
+
+get-blit-map_ color/int -> ByteArray:
+  blit-map := blit-map-cache_.get color
+  if blit-map: return blit-map
+  blit-map = ByteArray 256: | byte |
+    nibble := 0
+    if  byte >> 6      == color: nibble |= 8
+    if (byte >> 4) & 3 == color: nibble |= 4
+    if (byte >> 2) & 3 == color: nibble |= 2
+    if  byte       & 3 == color: nibble |= 1
+    nibble  // Initialize the byte array with the last value in the block.
+  blit-map-cache_[color] = blit-map
+  return blit-map
 
 /**
 A PNG reader that converts all PNG files into
@@ -52,21 +68,63 @@ class Png extends PngDecompressor_:
     pixel-byte-array, line-stride.  bits-per-pixel is always 1 or 8
   It may be called multiple times.  The byte array may be larger than
     needed, and the caller should only use the first line-to - line-from..
-  The caller uses non-local return to stop the scan.
   */
-  get-indexed-image-data line/int [block] -> none:
+  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
     if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
       throw "PNG is not palette or grayscale"
     index := line * byte-width
-    if bit-depth == 16:
+    if bit-depth == 16 and acceptable-depths & 16 == 0:
       throw "PNG is 16 bit per pixel"
-    if bit-depth == 8 or bit-depth == 1:
+    palette-argument := gray-palette ? this.gray-palette : palette
+    if acceptable-depths & bit-depth != 0:
       source := image-data[index..]
-      block.call line height bit-depth source byte-width
+      block.call line to-line bit-depth source byte-width palette-argument alpha-palette
       return
-    buffer-height := min 1 (4096 / width)
+    if bit-depth == 2 and acceptable-depths & 1 != 0 and acceptable-depths & 8 == 0:
+      // We can draw a 2-bit image with several calls to 1-bit drawing.
+      one-bit-byte-width := (width + 7) >> 3
+      buffer-height := min
+          height
+          max 1 (4096 / one-bit-byte-width)
+      buffer := ByteArray (buffer-height * one-bit-byte-width)
+      List.chunk-up line to-line buffer-height: | y-from y-to |
+        source := image-data[y-from * byte-width .. y-to * byte-width]
+        4.repeat: | palette-index |
+          alpha := alpha-palette[palette-index]
+          if alpha != 0 and palette_.size > palette_index * 3:
+            if alpha != 0xff: throw "No partially transparent PNGs on this display"
+            blit
+                source
+                buffer
+                (byte-width + 1) >> 1  // Pixels per line
+                --shift=4
+                --source-pixel-stride=2
+                --source-line-stride=byte-width
+                --destination-line-stride=one-bit-byte-width
+                --lookup-table=(get-blit-map_ palette-index)
+            blit
+                source[1..]
+                buffer
+                byte-width >> 1  // Pixels per line
+                --source-pixel-stride=2
+                --source-line-stride=byte-width
+                --destination-line-stride=one-bit-byte-width
+                --lookup-table=(get-blit-map_ palette-index)
+                --operation=bitmap.OR
+            pr := palette_[palette-index * 3]
+            pg := palette_[palette-index * 3 + 1]
+            pb := palette_[palette-index * 3 + 2]
+            bit-palette := #[0, 0, 0, pr, pg, pb]
+            if gray-palette:
+              bit-palette[3] = (77 * pr + 150 * pg + 29 * pb) >> 8
+            block.call y-from y-to 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
+      return
+    if acceptable-depths & 8 == 0: throw "This display can't handle $(bit-depth)-bit PNGs"
+    buffer-height := min
+        height
+        max 1 (4096 / width)
     buffer := ByteArray (buffer-height * width)
-    List.chunk-up line height buffer-height: | y-from y-to |
+    List.chunk-up line to-line buffer-height: | y-from y-to |
       source := image-data[y-from * byte-width .. y-to * byte-width]
       bytemap-zap buffer 0
       expansion := 8 / bit-depth
@@ -82,7 +140,7 @@ class Png extends PngDecompressor_:
             --source-line-stride=byte-width
             --destination-pixel-stride=expansion
             --destination-line-stride=width
-      block.call y-from y-to 8 buffer width
+      block.call y-from y-to 8 buffer width palette-argument alpha-palette
 
 /**
 Scans a Png file for useful information, without decompressing the image data.
@@ -133,7 +191,7 @@ class PngInfo extends PngScanner_:
     uncompressed-size := byte-width * height
     return (bytes.size.to-float * 100) / uncompressed-size
 
-  get-indexed-image-data line/int [block] -> none:
+  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
     unreachable
 
 /**
@@ -170,29 +228,34 @@ class PngRandomAccess extends PngScanner_:
     needed, and the caller should only use the first line-to - line-from..
   The caller uses non-local return to stop the scan.
   */
-  get-indexed-image-data line/int [block] -> none:
+  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
     if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
       throw "PNG is not palette or grayscale"
-    if bit-depth == 16:
+    if bit-depth == 16 and acceptable-depths & 16 == 0:
       throw "PNG is 16 bit per pixel"
     offsets := uncompressed-line-offsets_
     bytes-per-line := byte-width + 1  // Because of the filter byte.
-    buffer-height := min 1 (4096 / width)
+    buffer-height := min
+        height
+        max 1 (4096 / width)
     buffer := null
+    palette-argument := gray-palette ? this.gray-palette : palette
     // Although the PNG is uncompressed, the image data may not be contiguous
     // since the zlib blocks have a maximum size.  Find the correct block for
     // the first line.
     for i := 0; i < offsets.size; i += 2:
       top := max line offsets[i]
-      bottom := i + 2 == offsets.size ? height : offsets[i + 2]
+      bottom := min
+          to-line
+          i + 2 == offsets.size ? height : offsets[i + 2]
       if top >= bottom: continue
       index := uncompressed-line-offsets_[i + 1] - top * bytes-per-line
-      if bit-depth == 8 or bit-depth == 1:
+      if acceptable-depths & bit-depth != 0:
         source := bytes[index + 1 + top * bytes-per-line .. index + bottom * bytes-per-line]
-        block.call top bottom bit-depth source bytes-per-line
+        block.call top bottom bit-depth source bytes-per-line palette-argument alpha-palette
         return
       if not buffer: buffer = ByteArray (buffer-height * width)
-      List.chunk-up top bottom buffer-height: | y-from y-to height |
+      List.chunk-up top bottom buffer-height: | y-from y-to |
         source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
         bytemap-zap buffer 0
         expansion := 8 / bit-depth
@@ -208,7 +271,7 @@ class PngRandomAccess extends PngScanner_:
               --source-line-stride=bytes-per-line
               --destination-pixel-stride=expansion
               --destination-line-stride=width
-        block.call y-from y-to 8 buffer width
+        block.call y-from y-to 8 buffer width palette-argument alpha-palette
 
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
@@ -250,7 +313,6 @@ abstract class PngScanner_ extends AbstractPng:
           found-header = true
         while chunk-pos != chunk.size:
           if chunk-pos > chunk.size:
-            print "Chopped up"
             return false  // Some zlib control bytes were chopped up.
           if literal-bytes-left-in-block != 0:
             // Record line position in PNG file.
@@ -258,7 +320,6 @@ abstract class PngScanner_ extends AbstractPng:
 
             next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
             if next-part-of-block % (byte-width + 1) != 0:
-              print "next-part-of-block $next-part-of-block, $byte-width"
               return false  // Chunk boundary and line boundary don't match.
             for i := 0; i < next-part-of-block; i += byte-width + 1:
               y++
@@ -400,12 +461,14 @@ abstract class AbstractPng:
   In compressed PNGs this method may cause a lot of image data to be
     decompressed, especially if this method is not called in order
     of non-descending $line.
+  Acceptable-depths should be the bitwise OR of the bit depths supported
+    by the caller.  1, 2, 4, 8, and 16 are supported.
   Throws an exception if the image is in RGB, RGBA, or gray-with alpha format.
   Guard aginst this by checking whether $color-type returns
     $COLOR-TYPE-TRUECOLOR, $COLOR-TYPE-TRUECOLOR-ALPHA, or
     $COLOR-TYPE-GRAYSCALE-ALPHA.
   */
-  abstract get-indexed-image-data line/int [block] -> none
+  abstract get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none
 
   stringify:
     color-type-string/string := color-type-to-string color-type
