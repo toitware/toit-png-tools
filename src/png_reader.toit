@@ -98,21 +98,7 @@ class Png extends PngDecompressor_:
     buffer := ByteArray (buffer-height * width)
     List.chunk-up line to-line buffer-height: | y-from y-to |
       source := image-data[y-from * byte-width .. y-to * byte-width]
-      bytemap-zap buffer 0
-      expansion := 8 / bit-depth
-      mask := (1 << bit-depth) - 1
-      shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
-      expansion.repeat: | shift |
-        blit
-            source
-            buffer[shift..]                              // Destination.
-            (width + expansion - 1 - shift) / expansion  // Pixels per line.
-            --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
-            --mask=mask                                  // Mask out the other 6 bits.
-            --source-line-stride=byte-width
-            --destination-pixel-stride=expansion
-            --destination-line-stride=width
-      block.call y-from y-to 8 buffer width palette-argument alpha-palette
+      get-two-or-four-bit-as-eight-bit-draws_ y-from y-to buffer source palette-argument byte-width block
 
 /**
 Scans a Png file for useful information, without decompressing the image data.
@@ -239,21 +225,7 @@ class PngRandomAccess extends PngScanner_:
         if not buffer: buffer = ByteArray (buffer-height * width)
         List.chunk-up top bottom buffer-height: | y-from y-to |
           source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
-          bytemap-zap buffer 0
-          expansion := 8 / bit-depth
-          mask := (1 << bit-depth) - 1
-          shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
-          expansion.repeat: | shift |
-            blit
-                source
-                buffer[shift..]                              // Destination.
-                (width + expansion - 1 - shift) / expansion  // Pixels per line.
-                --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
-                --mask=mask                                  // Mask out the other 6 bits.
-                --source-line-stride=bytes-per-line
-                --destination-pixel-stride=expansion
-                --destination-line-stride=width
-          block.call y-from y-to 8 buffer width palette-argument alpha-palette
+          get-two-or-four-bit-as-eight-bit-draws_ y-from y-to buffer source palette-argument bytes-per-line block
 
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
@@ -532,6 +504,22 @@ abstract class AbstractPng:
         if gray-palette:
           bit-palette[3] = (77 * pr + 150 * pg + 29 * pb) >> 8
         block.call y-from y-to 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
+
+  get-two-or-four-bit-as-eight-bit-draws_ y-from/int y-to/int buffer/ByteArray source/ByteArray palette-argument/ByteArray bytes-per-line/int [block]:
+    expansion := 8 / bit-depth
+    mask := (1 << bit-depth) - 1
+    shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
+    expansion.repeat: | shift |
+      blit
+          source
+          buffer[shift..]                              // Destination.
+          (width + expansion - 1 - shift) / expansion  // Pixels per line.
+          --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
+          --mask=mask                                  // Mask out the other 6 bits.
+          --source-line-stride=bytes-per-line
+          --destination-pixel-stride=expansion
+          --destination-line-stride=width
+    block.call y-from y-to 8 buffer width palette-argument alpha-palette
 
 color-type-to-string color-type/int -> string:
   if color-type == COLOR-TYPE-GRAYSCALE:
