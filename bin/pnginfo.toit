@@ -33,36 +33,36 @@ main args/List:
           cli.Flag "version"
               --short-name="v"
               --default=false
-              --short-help="Print version and exit",
+              --short-help="Print version and exit.",
           cli.Flag "json"
               --short-name="j"
               --default=false
-              --short-help="Print information in JSON format",
+              --short-help="Print information in JSON format.",
           cli.Flag "width"
               --short-name="w"
               --default=false
-              --short-help="Print the width of the image in pixels, and nothing else",
+              --short-help="Print the width of the image in pixels, and nothing else.",
           cli.Flag "height"
               --short-name="h"
               --default=false
-              --short-help="Print the width of the image in pixels, and nothing else",
+              --short-help="Print the width of the image in pixels, and nothing else.",
           cli.Option "chunk"
               --short-name="c"
               --default=null
-              --short-help="Dump the contents of the named chunk and nothing else"
+              --short-help="Dump the contents of the named chunk and nothing else."
               --type="string",
           cli.Flag "all-chunks"
               --short-name="a"
               --default=false
-              --short-help="Dump the contents of all non-required chunks",
+              --short-help="Dump the contents of all non-required chunks.",
           cli.Flag "random-access"
               --short-name="r"
               --default=false
-              --short-help="Print whether the PNG file has uncompressed random access pixel data",
+              --short-help="Print whether the PNG file has uncompressed random access pixel data.",
           cli.Flag "show-image-data"
               --short-name="s"
               --default=false
-              --short-help="Use terminal graphics to show the image data",
+              --short-help="Use terminal graphics to show the image data.",
           cli.Flag "debug-stack-traces"
               --short-name="d"
               --default=false
