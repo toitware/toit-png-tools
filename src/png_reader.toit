@@ -89,35 +89,7 @@ class Png extends PngDecompressor_:
       buffer := ByteArray (buffer-height * one-bit-byte-width)
       List.chunk-up line to-line buffer-height: | y-from y-to |
         source := image-data[y-from * byte-width .. y-to * byte-width]
-        4.repeat: | palette-index |
-          alpha := alpha-palette[palette-index]
-          if alpha != 0 and palette_.size > palette_index * 3:
-            if alpha != 0xff: throw "No partially transparent PNGs on this display"
-            blit
-                source
-                buffer
-                (byte-width + 1) >> 1  // Pixels per line
-                --shift=4
-                --source-pixel-stride=2
-                --source-line-stride=byte-width
-                --destination-line-stride=one-bit-byte-width
-                --lookup-table=(get-blit-map_ palette-index)
-            blit
-                source[1..]
-                buffer
-                byte-width >> 1  // Pixels per line
-                --source-pixel-stride=2
-                --source-line-stride=byte-width
-                --destination-line-stride=one-bit-byte-width
-                --lookup-table=(get-blit-map_ palette-index)
-                --operation=bitmap.OR
-            pr := palette_[palette-index * 3]
-            pg := palette_[palette-index * 3 + 1]
-            pb := palette_[palette-index * 3 + 2]
-            bit-palette := #[0, 0, 0, pr, pg, pb]
-            if gray-palette:
-              bit-palette[3] = (77 * pr + 150 * pg + 29 * pb) >> 8
-            block.call y-from y-to 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
+        get-two-bit-as-four-one-bit-draws_ y-from y-to buffer source gray-palette byte-width block
       return
     if acceptable-depths & 8 == 0: throw "This display can't handle $(bit-depth)-bit PNGs"
     buffer-height := min
@@ -235,9 +207,6 @@ class PngRandomAccess extends PngScanner_:
       throw "PNG is 16 bit per pixel"
     offsets := uncompressed-line-offsets_
     bytes-per-line := byte-width + 1  // Because of the filter byte.
-    buffer-height := min
-        height
-        max 1 (4096 / width)
     buffer := null
     palette-argument := gray-palette ? this.gray-palette : palette
     // Although the PNG is uncompressed, the image data may not be contiguous
@@ -253,25 +222,38 @@ class PngRandomAccess extends PngScanner_:
       if acceptable-depths & bit-depth != 0:
         source := bytes[index + 1 + top * bytes-per-line .. index + bottom * bytes-per-line]
         block.call top bottom bit-depth source bytes-per-line palette-argument alpha-palette
-        return
-      if not buffer: buffer = ByteArray (buffer-height * width)
-      List.chunk-up top bottom buffer-height: | y-from y-to |
-        source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
-        bytemap-zap buffer 0
-        expansion := 8 / bit-depth
-        mask := (1 << bit-depth) - 1
-        shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
-        expansion.repeat: | shift |
-          blit
-              source
-              buffer[shift..]                              // Destination.
-              (width + expansion - 1 - shift) / expansion  // Pixels per line.
-              --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
-              --mask=mask                                  // Mask out the other 6 bits.
-              --source-line-stride=bytes-per-line
-              --destination-pixel-stride=expansion
-              --destination-line-stride=width
-        block.call y-from y-to 8 buffer width palette-argument alpha-palette
+      else if bit-depth == 2 and acceptable-depths & 1 != 0 and acceptable-depths & 8 == 0:
+        // We can draw a 2-bit image with several calls to 1-bit drawing.
+        one-bit-byte-width := (width + 7) >> 3
+        buffer-height := min
+            height
+            max 1 (4096 / one-bit-byte-width)
+        bit-buffer := ByteArray (buffer-height * one-bit-byte-width)
+        List.chunk-up top bottom buffer-height: | y-from y-to |
+          source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
+          get-two-bit-as-four-one-bit-draws_ y-from y-to bit-buffer source gray-palette bytes-per-line block
+      else:
+        buffer-height := min
+            height
+            max 1 (4096 / width)
+        if not buffer: buffer = ByteArray (buffer-height * width)
+        List.chunk-up top bottom buffer-height: | y-from y-to |
+          source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
+          bytemap-zap buffer 0
+          expansion := 8 / bit-depth
+          mask := (1 << bit-depth) - 1
+          shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
+          expansion.repeat: | shift |
+            blit
+                source
+                buffer[shift..]                              // Destination.
+                (width + expansion - 1 - shift) / expansion  // Pixels per line.
+                --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
+                --mask=mask                                  // Mask out the other 6 bits.
+                --source-line-stride=bytes-per-line
+                --destination-pixel-stride=expansion
+                --destination-line-stride=width
+          block.call y-from y-to 8 buffer width palette-argument alpha-palette
 
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
@@ -518,6 +500,38 @@ abstract class AbstractPng:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
           palette_ = ByteArray (size * 3): (it / 3) * factor
+
+  get-two-bit-as-four-one-bit-draws_ y-from/int y-to/int buffer/ByteArray source/ByteArray gray-palette/bool bytes-per-line/int [block]:
+    one-bit-byte-width := (width + 7) >> 3
+    4.repeat: | palette-index |
+      alpha := alpha-palette[palette-index]
+      if alpha != 0 and palette_.size > palette-index * 3:
+        if alpha != 0xff: throw "No partially transparent PNGs on this display"
+        blit
+            source
+            buffer
+            (byte-width + 1) >> 1  // Pixels per line
+            --shift=4
+            --source-pixel-stride=2
+            --source-line-stride=bytes-per-line
+            --destination-line-stride=one-bit-byte-width
+            --lookup-table=(get-blit-map_ palette-index)
+        blit
+            source[1..]
+            buffer
+            byte-width >> 1  // Pixels per line
+            --source-pixel-stride=2
+            --source-line-stride=bytes-per-line
+            --destination-line-stride=one-bit-byte-width
+            --lookup-table=(get-blit-map_ palette-index)
+            --operation=bitmap.OR
+        pr := palette_[palette-index * 3]
+        pg := palette_[palette-index * 3 + 1]
+        pb := palette_[palette-index * 3 + 2]
+        bit-palette := #[0, 0, 0, pr, pg, pb]
+        if gray-palette:
+          bit-palette[3] = (77 * pr + 150 * pg + 29 * pb) >> 8
+        block.call y-from y-to 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
 
 color-type-to-string color-type/int -> string:
   if color-type == COLOR-TYPE-GRAYSCALE:
