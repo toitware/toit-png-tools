@@ -33,36 +33,36 @@ main args/List:
           cli.Flag "version"
               --short-name="v"
               --default=false
-              --short-help="Print version and exit",
+              --short-help="Print version and exit.",
           cli.Flag "json"
               --short-name="j"
               --default=false
-              --short-help="Print information in JSON format",
+              --short-help="Print information in JSON format.",
           cli.Flag "width"
               --short-name="w"
               --default=false
-              --short-help="Print the width of the image in pixels, and nothing else",
+              --short-help="Print the width of the image in pixels, and nothing else.",
           cli.Flag "height"
               --short-name="h"
               --default=false
-              --short-help="Print the width of the image in pixels, and nothing else",
+              --short-help="Print the width of the image in pixels, and nothing else.",
           cli.Option "chunk"
               --short-name="c"
               --default=null
-              --short-help="Dump the contents of the named chunk and nothing else"
+              --short-help="Dump the contents of the named chunk and nothing else."
               --type="string",
           cli.Flag "all-chunks"
               --short-name="a"
               --default=false
-              --short-help="Dump the contents of all non-required chunks",
+              --short-help="Dump the contents of all non-required chunks.",
           cli.Flag "random-access"
               --short-name="r"
               --default=false
-              --short-help="Print whether the PNG file has uncompressed random access pixel data",
+              --short-help="Print whether the PNG file has uncompressed random access pixel data.",
           cli.Flag "show-image-data"
               --short-name="s"
               --default=false
-              --short-help="Use terminal graphics to show the image data",
+              --short-help="Use terminal graphics to show the image data.",
           cli.Flag "debug-stack-traces"
               --short-name="d"
               --default=false
@@ -92,37 +92,37 @@ dump parsed -> none:
     parsed.usage
     exit 1
 
+  out-stream := parsed["out"] == "-" ?
+      pipe.stdout :
+      file.Stream.for-write parsed["out"]
+
   for i := 0; i < parsed["file"].size; i++:
     file-name := parsed["file"][i]
-    dump file-name parsed (i == 0)
+    dump file-name parsed out-stream (i == 0)
 
-dump file-name/string parsed is-first/bool -> none:
-  if not is-first: print
+dump file-name/string parsed out-stream is-first/bool -> none:
+  if not is-first: write out-stream "\n"
   debug/bool := parsed["debug-stack-traces"]
 
   pngs := slurp-file file-name --debug=debug --include-image-data=parsed["show-image-data"]
   png/PngInfo := pngs[0]
 
-  out-stream := parsed["out"] == "-" ?
-      pipe.stdout :
-      file.Stream.for-write parsed["out"]
-
   if parsed["width"]:
-    out-stream.write png.width.stringify
-    out-stream.write "\n"
+    write out-stream png.width.stringify
+    write out-stream "\n"
     return
 
   if parsed["height"]:
-    out-stream.write png.height.stringify
-    out-stream.write "\n"
+    write out-stream png.height.stringify
+    write out-stream "\n"
     return
 
   if parsed["random-access"]:
     if png.uncompressed-random-access:
-      out-stream.write "true\n"
+      write out-stream "true\n"
       exit 0
     else:
-      out-stream.write "false\n"
+      write out-stream "false\n"
       exit 1
     unreachable
 
@@ -148,8 +148,8 @@ dump file-name/string parsed is-first/bool -> none:
       map[parsed["chunk"]] = (json-format ? (List data.size: data[it]) : data)
 
   if json-format:
-    out-stream.write (json.encode map)
-    out-stream.write "\n"
+    write out-stream (json.encode map)
+    write out-stream "\n"
     return
 
   map.remove "width"
@@ -160,7 +160,7 @@ dump file-name/string parsed is-first/bool -> none:
   map.do: | key value |
     properties.add "$key: $value"
 
-  out-stream.write "PNG file: $(png.width)x$png.height\n$(properties.join "\n")\n"
+  write out-stream "PNG file: $(png.width)x$png.height\n$(properties.join "\n")\n"
 
   if parsed["show-image-data"]:
     show-image-data pngs[1] out-stream
@@ -216,7 +216,7 @@ class Terminal:
   set-fg pixel/Pixel odd/bool -> none:
     pixel.mix odd: | r g b |
       if r != fg-r or g != fg-b or b != fg-b:
-        writer.write "\x1b[38;2;$r;$g;$(b)m"
+        write writer "\x1b[38;2;$r;$g;$(b)m"
         fg-r = r
         fg-g = g
         fg-b = b
@@ -224,10 +224,15 @@ class Terminal:
   set-bg pixel/Pixel odd/bool -> none:
     pixel.mix odd: | r g b |
       if r != bg-r or g != bg-b or b != bg-b:
-        writer.write "\x1b[48;2;$r;$g;$(b)m"
+        write writer "\x1b[48;2;$r;$g;$(b)m"
         bg-r = r
         bg-g = g
         bg-b = b
+
+write writer data -> none:
+  from := 0
+  while from != data.size:
+    from += writer.write data[from..]
 
 show-image-data png/PngRgba out-stream -> none:
   width := png.width
@@ -251,8 +256,8 @@ show-image-data png/PngRgba out-stream -> none:
       odd := i & 1 != 0
       if not terminal.has-fg pixel odd:
         terminal.set-fg pixel odd
-      out-stream.write "▄"
-    out-stream.write "\x1b[0m\n"
+      write out-stream "▄"
+    write out-stream "\x1b[0m\n"
     terminal.reset
 
   pixels := List width
@@ -273,13 +278,13 @@ show-image-data png/PngRgba out-stream -> none:
       odd := i & 1 != 0
       if (terminal.has-fg pixels[i] (not odd)) and
           (terminal.has-bg pixel odd):
-        out-stream.write "▀"
+        write out-stream "▀"
       else:
         terminal.set-bg pixels[i] (not odd)
         terminal.set-fg pixel odd
-        out-stream.write "▄"
+        write out-stream "▄"
     terminal.reset
-    out-stream.write "\x1b[0m\n"
+    write out-stream "\x1b[0m\n"
 
 slurp-file file-name/string --debug/bool --include-image-data/bool=false -> List:
   error := catch --unwind=debug:

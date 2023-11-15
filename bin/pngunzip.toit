@@ -49,11 +49,11 @@ main args/List:
               --short-help="Preserve all chunks",
           cli.Option "preserve-chunk"
               --multi
-              --short-help="Preserve a named chunk (can be repeated)."
+              --short-help="Preserve a named chunk."
               --type="string",
           cli.Option "override-chunk"
               --multi
-              --short-help="Override a named chunk (can be repeated)."
+              --short-help="Override a named chunk."
               --type="string",
           ]
       --rest=[
@@ -74,7 +74,7 @@ unzip parsed -> none:
   if not overridden-chunks:
     pipe.stderr.write "Invalid override chunk.\n"
     pipe.stderr.write "  Format: --override-chunk=NAME=VALUE\n"
-    pipe.stderr.write "  Format: --override-chunk=#[0x00, 0x01, 0x02]\n"
+    pipe.stderr.write "  Format: --override-chunk=NAME=#[0x00, 0x01, 0x02]\n"
     exit 1
 
   file-name := parsed["file"]
