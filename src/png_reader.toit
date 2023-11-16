@@ -86,10 +86,9 @@ class Png extends PngDecompressor_:
       buffer-height := min
           height
           max 1 (4096 / one-bit-byte-width)
-      buffer := ByteArray (buffer-height * one-bit-byte-width)
       List.chunk-up line to-line buffer-height: | y-from y-to |
         source := image-data[y-from * byte-width .. y-to * byte-width]
-        get-two-bit-as-four-one-bit-draws_ y-from y-to buffer source gray-palette byte-width block
+        get-two-bit-as-four-one-bit-draws_ y-from y-to source gray-palette byte-width block
       return
     if acceptable-depths & 8 == 0: throw "This display can't handle $(bit-depth)-bit PNGs"
     buffer-height := min
@@ -214,10 +213,9 @@ class PngRandomAccess extends PngScanner_:
         buffer-height := min
             height
             max 1 (4096 / one-bit-byte-width)
-        bit-buffer := ByteArray (buffer-height * one-bit-byte-width)
         List.chunk-up top bottom buffer-height: | y-from y-to |
           source := bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
-          get-two-bit-as-four-one-bit-draws_ y-from y-to bit-buffer source gray-palette bytes-per-line block
+          get-two-bit-as-four-one-bit-draws_ y-from y-to source gray-palette bytes-per-line block
       else:
         buffer-height := min
             height
@@ -409,8 +407,7 @@ abstract class AbstractPng:
     return palette-a_
 
   /**
-  Writes the image data for the given line into the two byte arrays
-    provided.  One byte per pixel is written into $pixel-data.
+  Gets the image data for the given lines.
   The pixel data should be read in connection with $palette.
   In compressed PNGs this method may cause a lot of image data to be
     decompressed, especially if this method is not called in order
@@ -473,38 +470,50 @@ abstract class AbstractPng:
           size := 1 << bit-depth
           palette_ = ByteArray (size * 3): (it / 3) * factor
 
-  get-two-bit-as-four-one-bit-draws_ y-from/int y-to/int buffer/ByteArray source/ByteArray gray-palette/bool bytes-per-line/int [block]:
+  // Takes 2-bit data and converts it to up to 4 one-bit draws.  Eg if the
+  // palette has red, black, and transparent then we will draw a red bitmap,
+  // and a black bitmap.  Since this is for displays that don't support partial
+  // transparency we allow a little slack in the PNG: Almost-transparent pixels
+  // are ignored (drawn as transparent), and almost-opaque pixels are drawn as
+  // opaque.
+  get-two-bit-as-four-one-bit-draws_ y-from/int y-to/int source/ByteArray gray-palette/bool bytes-per-line/int [block]:
     one-bit-byte-width := (width + 7) >> 3
-    4.repeat: | palette-index |
-      alpha := alpha-palette[palette-index]
-      if alpha != 0 and palette_.size > palette-index * 3:
-        if alpha != 0xff: throw "No partially transparent PNGs on this display"
-        blit
-            source
-            buffer
-            (byte-width + 1) >> 1  // Pixels per line
-            --shift=4
-            --source-pixel-stride=2
-            --source-line-stride=bytes-per-line
-            --destination-line-stride=one-bit-byte-width
-            --lookup-table=(get-blit-map_ palette-index)
-        blit
-            source[1..]
-            buffer
-            byte-width >> 1  // Pixels per line
-            --source-pixel-stride=2
-            --source-line-stride=bytes-per-line
-            --destination-line-stride=one-bit-byte-width
-            --lookup-table=(get-blit-map_ palette-index)
-            --operation=bitmap.OR
-        pr := palette_[palette-index * 3]
-        pg := palette_[palette-index * 3 + 1]
-        pb := palette_[palette-index * 3 + 2]
-        bit-palette := #[0, 0, 0, pr, pg, pb]
-        if gray-palette:
-          bit-palette[3] = (77 * pr + 150 * pg + 29 * pb) >> 8
-        block.call y-from y-to 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
+    buffer := buffers_.loan ((y-to - y-from) * one-bit-byte-width)
+    try:
+      4.repeat: | palette-index |
+        alpha := alpha-palette[palette-index]
+        if alpha >= 16 and palette_.size > palette-index * 3:
+          if alpha < 0xf0: throw "No partially transparent PNGs on this display"
+          blit
+              source
+              buffer
+              (byte-width + 1) >> 1  // Pixels per line
+              --shift=4
+              --source-pixel-stride=2
+              --source-line-stride=bytes-per-line
+              --destination-line-stride=one-bit-byte-width
+              --lookup-table=(get-blit-map_ palette-index)
+          blit
+              source[1..]
+              buffer
+              byte-width >> 1  // Pixels per line
+              --source-pixel-stride=2
+              --source-line-stride=bytes-per-line
+              --destination-line-stride=one-bit-byte-width
+              --lookup-table=(get-blit-map_ palette-index)
+              --operation=bitmap.OR
+          pr := palette_[palette-index * 3]
+          pg := palette_[palette-index * 3 + 1]
+          pb := palette_[palette-index * 3 + 2]
+          bit-palette := #[0, 0, 0, pr, pg, pb]
+          if gray-palette:
+            bit-palette[3] = (77 * pr + 150 * pg + 29 * pb) >> 8
+          block.call y-from y-to 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
+    finally:
+      buffers_.put-back buffer
 
+  // Takes 2-bit or 4-bit image data and blows it up to 8-bit data
+  // that can be drawn with the bitmap primitives.
   get-two-or-four-bit-as-eight-bit-draws_ y-from/int y-to/int buffer/ByteArray source/ByteArray palette-argument/ByteArray bytes-per-line/int [block]:
     expansion := 8 / bit-depth
     mask := (1 << bit-depth) - 1
@@ -734,3 +743,43 @@ class Chunk:
     if checksum != calculated-checksum:
       throw "Invalid checksum"
     position-updater.call (position + size + 12) (position + 8)
+
+buffers_ := BufferUnchurner_
+
+/**
+A store of temporary byte buffers.
+You can ask for a buffer of a certain size, and it will loan
+  one to you.  When you are done, put it back with put-back.
+When memory pressure is high, the store will be emptied by
+  the GC.
+*/
+class BufferUnchurner_:
+  map_ /Map
+
+  constructor:
+    map_ = Map.weak
+
+  loan size/int -> ByteArray:
+    return (loan-helper_ size) or (ByteArray size)
+
+  loan-helper_ size/int -> ByteArray?:
+    map_.get size --if-present=: | byte-array |
+      if byte-array:
+        map_.remove size
+        return byte-array
+      else:
+        map_.remove size  // Clean up the weak reference.
+    best-size := null
+    max-size := size + size
+    map_.do: | found-size/int found-array/ByteArray? |
+      if found-array and found-size >= size and found-size <= max-size:
+        if (not best-size) or found-size < best-size:
+        best-size = found-size
+    if best-size:
+      byte-array := map_[best-size]
+      map_.remove best-size
+      return byte-array
+    return null
+
+  put-back byte-array/ByteArray -> none:
+    map_[byte-array.size] = byte-array
