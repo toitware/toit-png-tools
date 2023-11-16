@@ -70,24 +70,9 @@ class Png extends PngDecompressor_:
     needed, and the caller should only use the first line-to - line-from..
   */
   get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
-    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
-      throw "PNG is not palette or grayscale"
-    index := line * byte-width
-    if bit-depth == 16 and acceptable-depths & 16 == 0:
-      throw "PNG is 16 bit per pixel"
-    palette-argument := gray-palette ? this.gray-palette : palette
-    if acceptable-depths & bit-depth != 0:
-      source := image-data[index..]
-      block.call line to-line bit-depth source byte-width palette-argument alpha-palette
-      return
-    if bit-depth == 2 and acceptable-depths & 1 != 0 and acceptable-depths & 8 == 0:
-      get-two-bit-as-four-one-bit-draws_ line to-line gray-palette byte-width block: | y-from/int y-to/int |
-        image-data[y-from * byte-width .. y-to * byte-width]
-
-      return
-    if acceptable-depths & 8 == 0: throw "This display can't handle $(bit-depth)-bit PNGs"
-    get-two-or-four-bit-as-eight-bit-draws_ line to-line palette-argument byte-width block: | y-from y-to |
+    source-slice-block :=: | y-from y-to |
       image-data[y-from * byte-width .. y-to * byte-width]
+    get-indexed-image-data-helper_ line to-line acceptable-depths byte-width gray-palette block source-slice-block
 
 /**
 Scans a Png file for useful information, without decompressing the image data.
@@ -176,13 +161,8 @@ class PngRandomAccess extends PngScanner_:
   The caller uses non-local return to stop the scan.
   */
   get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
-    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
-      throw "PNG is not palette or grayscale"
-    if bit-depth == 16 and acceptable-depths & 16 == 0:
-      throw "PNG is 16 bit per pixel"
     offsets := uncompressed-line-offsets_
-    bytes-per-line := byte-width + 1  // Because of the filter byte.
-    palette-argument := gray-palette ? this.gray-palette : palette
+    source-line-stride := byte-width + 1  // Because of the filter byte.
     // Although the PNG is uncompressed, the image data may not be contiguous
     // since the zlib blocks have a maximum size.  Find the correct block for
     // the first line.
@@ -192,19 +172,10 @@ class PngRandomAccess extends PngScanner_:
           to-line
           i + 2 == offsets.size ? height : offsets[i + 2]
       if top >= bottom: continue
-      index := uncompressed-line-offsets_[i + 1] - top * bytes-per-line
-      if acceptable-depths & bit-depth != 0:
-        source := bytes[index + 1 + top * bytes-per-line .. index + bottom * bytes-per-line]
-        block.call top bottom bit-depth source bytes-per-line palette-argument alpha-palette
-      else if bit-depth == 2 and acceptable-depths & 1 != 0 and acceptable-depths & 8 == 0:
-        // We can draw a 2-bit image with several calls to 1-bit drawing.
-        get-two-bit-as-four-one-bit-draws_ top bottom gray-palette bytes-per-line block: | y-from/int y-to/int |
-          bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
-
-      else:
-        get-two-or-four-bit-as-eight-bit-draws_ top bottom palette-argument bytes-per-line block: | y-from y-to |
-          bytes[index + 1 + y-from * bytes-per-line .. index + y-to * bytes-per-line]
-
+      index := uncompressed-line-offsets_[i + 1] - top * source-line-stride
+      source-slice-block :=: | y-from y-to |
+        bytes[index + 1 + y-from * source-line-stride .. index + y-to * source-line-stride]
+      get-indexed-image-data-helper_ top bottom acceptable-depths source-line-stride gray-palette block source-slice-block
 
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
@@ -450,6 +421,22 @@ abstract class AbstractPng:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
           palette_ = ByteArray (size * 3): (it / 3) * factor
+
+  get-indexed-image-data-helper_ line to-line acceptable-depths source-line-stride/int gray-palette/bool [block] [source-slice-block]:
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+      throw "PNG is not palette or grayscale"
+    if bit-depth == 16 and acceptable-depths & 16 == 0:
+      throw "PNG is 16 bit per pixel"
+    palette-argument := gray-palette ? this.gray-palette : palette
+    if acceptable-depths & bit-depth != 0:
+      source := source-slice-block.call line to-line
+      block.call line to-line bit-depth source source-line-stride palette-argument alpha-palette
+    else if bit-depth == 2 and acceptable-depths & 1 != 0 and acceptable-depths & 8 == 0:
+      get-two-bit-as-four-one-bit-draws_ line to-line gray-palette source-line-stride block source-slice-block
+    else if acceptable-depths & 8 != 0:
+      get-two-or-four-bit-as-eight-bit-draws_ line to-line palette-argument source-line-stride block source-slice-block
+    else:
+      throw "This display can't handle $(bit-depth)-bit PNGs"
 
   // Takes 2-bit data and converts it to up to 4 one-bit draws.  Eg if the
   // palette has red, black, and transparent then we will draw a red bitmap,
