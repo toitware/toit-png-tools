@@ -36,7 +36,7 @@ class PngRgba extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --convert-to-rgba
 
-  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
     throw "Palette image data is not available from PngRgba"
 
 blit-map-cache_ := Map.weak
@@ -69,10 +69,10 @@ class Png extends PngDecompressor_:
   It may be called multiple times.  The byte array may be larger than
     needed, and the caller should only use the first line-to - line-from..
   */
-  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
     source-slice-block :=: | y-from y-to |
       image-data[y-from * byte-width .. y-to * byte-width]
-    get-indexed-image-data-helper_ line to-line acceptable-depths byte-width gray-palette block source-slice-block
+    get-indexed-image-data-helper_ line to-line accept-8-bit byte-width gray-palette block source-slice-block
 
 /**
 Scans a Png file for useful information, without decompressing the image data.
@@ -123,7 +123,7 @@ class PngInfo extends PngScanner_:
     uncompressed-size := byte-width * height
     return (bytes.size.to-float * 100) / uncompressed-size
 
-  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
     unreachable
 
 /**
@@ -160,7 +160,7 @@ class PngRandomAccess extends PngScanner_:
     needed, and the caller should only use the first line-to - line-from..
   The caller uses non-local return to stop the scan.
   */
-  get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none:
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
     offsets := uncompressed-line-offsets_
     source-line-stride := byte-width + 1  // Because of the filter byte.
     // Although the PNG is uncompressed, the image data may not be contiguous
@@ -175,7 +175,7 @@ class PngRandomAccess extends PngScanner_:
       index := uncompressed-line-offsets_[i + 1] - top * source-line-stride
       source-slice-block :=: | y-from y-to |
         bytes[index + 1 + y-from * source-line-stride .. index + y-to * source-line-stride]
-      get-indexed-image-data-helper_ top bottom acceptable-depths source-line-stride gray-palette block source-slice-block
+      get-indexed-image-data-helper_ top bottom accept-8-bit source-line-stride gray-palette block source-slice-block
 
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
@@ -364,14 +364,14 @@ abstract class AbstractPng:
   In compressed PNGs this method may cause a lot of image data to be
     decompressed, especially if this method is not called in order
     of non-descending $line.
-  Acceptable-depths should be the bitwise OR of the bit depths supported
-    by the caller.  1, 2, 4, 8, and 16 are supported.
+  It is assumed that 1-bit image data is always allowed, but some
+    canvases can also draw 8 bit indexed images.
   Throws an exception if the image is in RGB, RGBA, or gray-with alpha format.
   Guard aginst this by checking whether $color-type returns
     $COLOR-TYPE-TRUECOLOR, $COLOR-TYPE-TRUECOLOR-ALPHA, or
     $COLOR-TYPE-GRAYSCALE-ALPHA.
   */
-  abstract get-indexed-image-data line/int to-line/int --acceptable-depths/int --gray-palette/bool [block] -> none
+  abstract get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none
 
   stringify:
     color-type-string/string := color-type-to-string color-type
@@ -422,18 +422,18 @@ abstract class AbstractPng:
           size := 1 << bit-depth
           palette_ = ByteArray (size * 3): (it / 3) * factor
 
-  get-indexed-image-data-helper_ line to-line acceptable-depths source-line-stride/int gray-palette/bool [block] [source-slice-block]:
+  get-indexed-image-data-helper_ line to-line accept-8-bit source-line-stride/int gray-palette/bool [block] [source-slice-block]:
     if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
       throw "PNG is not palette or grayscale"
-    if bit-depth == 16 and acceptable-depths & 16 == 0:
+    if bit-depth == 16:
       throw "PNG is 16 bit per pixel"
     palette-argument := gray-palette ? this.gray-palette : palette
-    if acceptable-depths & bit-depth != 0:
+    if bit-depth == 1 or (bit-depth == 8 and accept-8-bit):
       source := source-slice-block.call line to-line
       block.call line to-line bit-depth source source-line-stride palette-argument alpha-palette
-    else if bit-depth == 2 and acceptable-depths & 1 != 0 and acceptable-depths & 8 == 0:
+    else if bit-depth == 2 and not accept-8-bit:
       get-two-bit-as-four-one-bit-draws_ line to-line gray-palette source-line-stride block source-slice-block
-    else if acceptable-depths & 8 != 0:
+    else if accept-8-bit:
       get-two-or-four-bit-as-eight-bit-draws_ line to-line palette-argument source-line-stride block source-slice-block
     else:
       throw "This display can't handle $(bit-depth)-bit PNGs"
