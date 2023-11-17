@@ -519,3 +519,51 @@ class Chunk:
     if checksum != calculated-checksum:
       throw "Invalid checksum"
     position-updater.call (position + size + 12) (position + 8)
+
+buffers_ := BufferUnchurner_
+
+/**
+A store of temporary byte buffers.
+You can ask for a buffer of a certain size, and it will loan
+  one to you.  When you are done, put it back with put-back.
+When memory pressure is high, the store will be emptied by
+  the GC.
+*/
+class BufferUnchurner_:
+  map_ /Map
+
+  constructor:
+    map_ = Map.weak
+
+  loan size/int -> ByteArray:
+    return (loan-helper_ size) or (ByteArray size)
+
+  loan-helper_ size/int -> ByteArray?:
+    map_.get size --if-present=: | byte-array |
+      if byte-array:
+        // Found an exact size match.
+        map_.remove size
+        return byte-array
+      else:
+        // Since the map is weak, the byte-array can be null if the GC has
+        // reclaimed it.
+        map_.remove size  // Clean up the weak reference.
+    best-size := null
+    max-size := size + size
+    map_.do: | found-size/int found-array/ByteArray? |
+      // When iterating we may find a key whose value has been nulled by
+      // the GC, so we need to check for nullness here.  We can't clear
+      // up such keys in the middle of a do loop, so we leave them, but
+      // the map also has a cleaner on a different task that will clean
+      // it eventually.
+      if found-array and size <= found-size <= max-size:
+        if (not best-size) or found-size < best-size:
+        best-size = found-size
+    if best-size:
+      byte-array := map_[best-size]
+      map_.remove best-size
+      return byte-array
+    return null
+
+  put-back byte-array/ByteArray -> none:
+    map_[byte-array.size] = byte-array
