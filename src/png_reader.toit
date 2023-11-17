@@ -86,7 +86,7 @@ class PngInfo extends PngScanner_:
 
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
-    uncompressed_ = image-data-is-uncompressed_ bytes --save-chunks: null
+    uncompressed_ = scan-uncompressed-image-data_ bytes --save-chunks --record-line-location=: null
 
   /**
   Returns true if the image data in the PNG is uncompressed, and all
@@ -130,6 +130,55 @@ class PngInfo extends PngScanner_:
   get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none:
     unreachable
 
+/**
+A PNG reader that gives random access to the decompressed pixel data.  Bit
+  widths smaller than 8 are expanded on demand.  See $get-indexed-image-data.
+
+Available image types formats are indexed (palette) and grayscale.
+
+This class is intended for use with PNGs produced by the pngunzip tool in bin/.
+Such PNGs may have a compact representation, like 2 bits per pixel, but they
+are not compressed. Therefore we have random access to the pixel data. They are
+designed to be kept in flash and used for UI elements that are almost always in
+use.
+
+For UI elements that are large in number, but seldom in use it may be better to
+use the PngUncompressed class, which decompresses to RAM when it is used.
+*/
+class PngRandomAccess extends PngScanner_:
+  // A sequence of y-coordinates and file positions for uncompressed lines.
+  // The uncompressed data includes a filter byte for each line, which
+  // must always be 0 (no predictor).
+  uncompressed-line-offsets_ := []
+
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename
+    process-bit-depth_ bit-depth color-type
+    uncompressed := scan-uncompressed-image-data_ bytes --record-line-location=: | y offset |
+      uncompressed-line-offsets_.add y
+      uncompressed-line-offsets_.add offset
+
+    if not uncompressed:
+      throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
+
+  // See super.
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none:
+    offsets := uncompressed-line-offsets_
+    source-line-stride := byte-width + 1  // Because of the filter byte.
+    // Although the PNG is uncompressed, the image data may not be contiguous
+    // since the zlib blocks have a maximum size.  Find the correct block for
+    // the first line.
+    for i := 0; i < offsets.size; i += 2:
+      top := max line offsets[i]
+      bottom := min
+          to-line
+          i + 2 == offsets.size ? height : offsets[i + 2]
+      if top >= bottom: continue
+      index := uncompressed-line-offsets_[i + 1] - top * source-line-stride
+      source-slice-block :=: | y-from y-to |
+        bytes[index + 1 + y-from * source-line-stride .. index + y-to * source-line-stride]
+      get-indexed-image-data-helper_ top bottom accept-8-bit source-line-stride need-gray-palette block source-slice-block
+
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
@@ -148,7 +197,7 @@ abstract class PngScanner_ extends AbstractPng:
     A non-trivial value for this makes the lines depend on each other and
     we cannot access them independently, so we return false in this case.
   */
-  image-data-is-uncompressed_ bytes/ByteArray --save-chunks/bool=false [block] -> bool:
+  scan-uncompressed-image-data_ bytes/ByteArray --save-chunks/bool=false [--record-line-location] -> bool:
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
@@ -173,7 +222,7 @@ abstract class PngScanner_ extends AbstractPng:
             return false  // Some zlib control bytes were chopped up.
           if literal-bytes-left-in-block != 0:
             // Record line position in PNG file.
-            block.call y (file-offset + chunk-pos)
+            record-line-location.call y (file-offset + chunk-pos)
 
             next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
             if next-part-of-block % (byte-width + 1) != 0:
