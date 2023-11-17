@@ -696,14 +696,22 @@ class BufferUnchurner_:
   loan-helper_ size/int -> ByteArray?:
     map_.get size --if-present=: | byte-array |
       if byte-array:
+        // Found an exact size match.
         map_.remove size
         return byte-array
       else:
+        // Since the map is weak, the byte-array can be null if the GC has
+        // reclaimed it.
         map_.remove size  // Clean up the weak reference.
     best-size := null
     max-size := size + size
     map_.do: | found-size/int found-array/ByteArray? |
-      if found-array and found-size >= size and found-size <= max-size:
+      // When iterating we may find a key whose value has been nulled by
+      // the GC, so we need to check for nullness here.  We can't clear
+      // up such keys in the middle of a do loop, so we leave them, but
+      // the map also has a cleaner on a different task that will clean
+      // it eventually.
+      if found-array and size <= found-size <= max-size:
         if (not best-size) or found-size < best-size:
         best-size = found-size
     if best-size:
