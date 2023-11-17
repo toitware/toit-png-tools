@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import binary show BIG-ENDIAN byte-swap-32 LITTLE-ENDIAN
+import bitmap
 import bitmap show blit bytemap-zap
 import bytes show Buffer
 import crypto.crc show *
@@ -27,6 +28,15 @@ PREDICTOR-UP_ ::= 2
 PREDICTOR-AVERAGE_ ::= 3
 PREDICTOR-PAETH_ ::= 4
 
+
+rgb-to-gray_ r/int g/int b/int -> int:
+  // Standard weights for RGB to gray conversion.
+  RED-WEIGHT ::= 77
+  GREEN-WEIGHT ::= 150
+  BLUE-WEIGHT ::= 29
+  WEIGHT-SHIFT ::= 8
+  return (r * RED-WEIGHT + g * GREEN-WEIGHT + b * BLUE-WEIGHT) >> WEIGHT-SHIFT
+
 /**
 A PNG reader that converts all PNG files into
   32 bit per pixel RGBA format.
@@ -34,6 +44,24 @@ A PNG reader that converts all PNG files into
 class PngRgba extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --convert-to-rgba
+
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none:
+    unreachable
+
+blit-map-cache_ := Map.weak
+
+get-blit-map_ color/int -> ByteArray:
+  blit-map := blit-map-cache_.get color
+  if blit-map: return blit-map
+  blit-map = ByteArray 256: | byte |
+    nibble := 0
+    if  byte >> 6      == color: nibble |= 8
+    if (byte >> 4) & 3 == color: nibble |= 4
+    if (byte >> 2) & 3 == color: nibble |= 2
+    if  byte       & 3 == color: nibble |= 1
+    nibble  // Initialize the byte array with the last value in the block.
+  blit-map-cache_[color] = blit-map
+  return blit-map
 
 /**
 A PNG reader that converts all PNG files into
@@ -43,6 +71,12 @@ A PNG reader that converts all PNG files into
 class Png extends PngDecompressor_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename --no-convert-to-rgba
+
+  /// See super.
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none:
+    source-slice-block :=: | y-from y-to |
+      image-data[y-from * byte-width .. y-to * byte-width]
+    get-indexed-image-data-helper_ line to-line accept-8-bit byte-width need-gray-palette block source-slice-block
 
 /**
 Scans a Png file for useful information, without decompressing the image data.
@@ -93,6 +127,9 @@ class PngInfo extends PngScanner_:
     uncompressed-size := byte-width * height
     return (bytes.size.to-float * 100) / uncompressed-size
 
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none:
+    unreachable
+
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
@@ -123,6 +160,8 @@ abstract class PngScanner_ extends AbstractPng:
         pos = position-after-chunk
         file-offset = chunk-data-position
       if chunk.name == "IDAT":
+        ensure-alpha-palette_ (1 << bit-depth)
+        ensure-rgb-palette_ (1 << bit-depth)
         chunk-pos := 0
         // A chunk of zlib-encoded data.  Check to see if it's actually
         // uncompressed data.
@@ -131,7 +170,6 @@ abstract class PngScanner_ extends AbstractPng:
           found-header = true
         while chunk-pos != chunk.size:
           if chunk-pos > chunk.size:
-            print "Chopped up"
             return false  // Some zlib control bytes were chopped up.
           if literal-bytes-left-in-block != 0:
             // Record line position in PNG file.
@@ -139,7 +177,6 @@ abstract class PngScanner_ extends AbstractPng:
 
             next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
             if next-part-of-block % (byte-width + 1) != 0:
-              print "next-part-of-block $next-part-of-block, $byte-width"
               return false  // Chunk boundary and line boundary don't match.
             for i := 0; i < next-part-of-block; i += byte-width + 1:
               y++
@@ -151,7 +188,8 @@ abstract class PngScanner_ extends AbstractPng:
             // Next zlib block has a 3-bit intro.  If it's a literal block, the
             // full size of the intro is 5 bytes.
             if end-of-zlib-stream:
-              return true
+              chunk-pos += 4  // Skip checksum bytes.
+              continue
             block-bits := chunk.data[chunk-pos] & 7
             if block-bits & 6 != 0:
               return false  // Not uncompressed.
@@ -181,6 +219,7 @@ abstract class AbstractPng:
   color-type/int
   pos := 0
   palette_/ByteArray := #[]
+  gray-palette_/ByteArray? := null
   saved-chunks/Map := {:}
   palette-a_/ByteArray := #[]
   r-transparent_/int? := null
@@ -248,6 +287,21 @@ abstract class AbstractPng:
   palette -> ByteArray:
     return palette_
 
+  gray-palette -> ByteArray:
+    if not gray-palette_:
+      if palette_.size == 0:
+        gray-palette_ = #[]
+      else:
+        gray-palette_ = ByteArray (palette_.size - 2):
+          if it % 3 == 0:
+            r := palette_[it]
+            g := palette_[it + 1]
+            b := palette_[it + 2]
+            rgb-to-gray_ r g b
+          else:
+            0
+    return gray-palette_
+
   /**
   Returns a ByteArray describing the alpha-palette for the PNG, with
     one bytes per index where 0 is transparent and 255 is opaque.
@@ -256,6 +310,31 @@ abstract class AbstractPng:
   */
   alpha-palette -> ByteArray:
     return palette-a_
+
+  /**
+  Gets the image data for the given lines.
+  The pixel data should be read in connection with $palette.
+  In compressed PNGs this method may cause a lot of image data to be
+    decompressed, especially if this method is not called in order
+    of non-descending $line.
+  It is assumed that 1-bit image data is always allowed, but some
+    callers can also used 8-bit indexed image data, indicated with
+    $accept-8-bit.
+  If the caller can only handle gray-scale images, the $need-gray-palette flag
+    should be set.  In this case the palette entries passed to the block will
+    contain a weighted average of the red, green, and blue intensities.
+  Throws an exception if the PNG is in RGB, RGBA, or gray-with-alpha format.
+  Guard against this by checking whether $color-type returns
+    $COLOR-TYPE-TRUECOLOR, $COLOR-TYPE-TRUECOLOR-ALPHA, or
+    $COLOR-TYPE-GRAYSCALE-ALPHA.
+  The block is called with the arguments line-from, line-to, bits-per-pixel,
+    pixel-byte-array, line-stride, palette, alpha-palette.  bits-per-pixel is
+    always 1 or 8
+  The block may be called multiple times.  The pixel byte array may be larger
+    than needed, and the caller should only use the first line-to - line-from
+    lines.
+  */
+  abstract get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none
 
   stringify:
     color-type-string/string := color-type-to-string color-type
@@ -305,6 +384,98 @@ abstract class AbstractPng:
           factor := [0, 255, 85, 0, 17, 0, 0, 0, 1][bit-depth]
           size := 1 << bit-depth
           palette_ = ByteArray (size * 3): (it / 3) * factor
+
+  get-indexed-image-data-helper_ line to-line accept-8-bit source-line-stride/int need-gray-palette/bool [block] [source-slice-block]:
+    if color-type == COLOR-TYPE-TRUECOLOR-ALPHA or color-type == COLOR-TYPE-TRUECOLOR or color-type == COLOR-TYPE-GRAYSCALE-ALPHA:
+      throw "PNG is not palette or grayscale"
+    if bit-depth == 16:
+      throw "PNG is 16 bit per pixel"
+    palette-argument := need-gray-palette ? gray-palette : palette
+    if bit-depth == 1 or (bit-depth == 8 and accept-8-bit):
+      source := source-slice-block.call line to-line
+      block.call line to-line bit-depth source source-line-stride palette-argument alpha-palette
+    else if bit-depth == 2 and not accept-8-bit:
+      get-two-bit-as-four-one-bit-draws_ line to-line need-gray-palette source-line-stride block source-slice-block
+    else if accept-8-bit:
+      get-two-or-four-bit-as-eight-bit-draws_ line to-line palette-argument source-line-stride block source-slice-block
+    else:
+      throw "This display can't handle $(bit-depth)-bit PNGs"
+
+  // Takes 2-bit data and converts it to up to 4 one-bit draws.  For example,
+  // if the palette has red, black, and transparent then we will draw a red
+  // bitmap, and a black bitmap.  Since this is for displays that don't support
+  // partial transparency we allow a little slack in the PNG:
+  // Almost-transparent pixels are ignored (drawn as transparent), and
+  // almost-opaque pixels are drawn as opaque.
+  get-two-bit-as-four-one-bit-draws_ y-from/int y-to/int need-gray-palette/bool bytes-per-line/int [block] [get-source-slice]:
+    one-bit-byte-width := (width + 7) >> 3
+    buffer-height := min
+        height
+        max 1 (4096 / one-bit-byte-width)
+    List.chunk-up y-from y-to buffer-height: | y-from-2 y-to-2 |
+      source := get-source-slice.call y-from-2 y-to-2
+      buffer := buffers_.loan ((y-to-2 - y-from-2) * one-bit-byte-width)
+      try:
+        4.repeat: | palette-index |
+          alpha := alpha-palette[palette-index]
+          ALMOST-OPAQUE ::= 0xf0
+          ALMOST-TRANSPARENT ::= 0x0f
+          if alpha > ALMOST-TRANSPARENT and palette_.size > palette-index * 3:
+            if alpha < ALMOST-OPAQUE: throw "No partially transparent PNGs on this display"
+            blit
+                source
+                buffer
+                (byte-width + 1) >> 1  // Pixels per line
+                --shift=4
+                --source-pixel-stride=2
+                --source-line-stride=bytes-per-line
+                --destination-line-stride=one-bit-byte-width
+                --lookup-table=(get-blit-map_ palette-index)
+            blit
+                source[1..]
+                buffer
+                byte-width >> 1  // Pixels per line
+                --source-pixel-stride=2
+                --source-line-stride=bytes-per-line
+                --destination-line-stride=one-bit-byte-width
+                --lookup-table=(get-blit-map_ palette-index)
+                --operation=bitmap.OR
+            pr := palette_[palette-index * 3]
+            pg := palette_[palette-index * 3 + 1]
+            pb := palette_[palette-index * 3 + 2]
+            bit-palette := #[0, 0, 0, pr, pg, pb]
+            if need-gray-palette:
+              bit-palette[3] = rgb-to-gray_ pr pg pb
+            block.call y-from-2 y-to-2 1 buffer one-bit-byte-width bit-palette #[0, 0xff]
+      finally:
+        buffers_.put-back buffer
+
+  // Takes 2-bit or 4-bit image data and blows it up to 8-bit data
+  // that can be drawn with the bitmap primitives.
+  get-two-or-four-bit-as-eight-bit-draws_ y-from/int y-to/int palette-argument/ByteArray bytes-per-line/int [block] [get-source-slice]:
+    buffer-height := min
+        height
+        max 1 (4096 / width)
+    List.chunk-up y-from y-to buffer-height: | y-from-2 y-to-2 |
+      source := get-source-slice.call y-from-2 y-to-2
+      buffer := buffers_.loan ((y-to-2 - y-from-2) * width)
+      try:
+        expansion := 8 / bit-depth
+        mask := (1 << bit-depth) - 1
+        shift-rights := (bit-depth == 2) ? "\x06\x04\x02\x00" : "\x04\x00"
+        expansion.repeat: | shift |
+          blit
+              source
+              buffer[shift..]                              // Destination.
+              (width + expansion - 1 - shift) / expansion  // Pixels per line.
+              --shift=shift-rights[shift]                  // Shift right 6, 4, 2, 0 bits.
+              --mask=mask                                  // Mask out the other 6 bits.
+              --source-line-stride=bytes-per-line
+              --destination-pixel-stride=expansion
+              --destination-line-stride=width
+        block.call y-from-2 y-to-2 8 buffer width palette-argument alpha-palette
+      finally:
+        buffers_.put-back buffer
 
 color-type-to-string color-type/int -> string:
   if color-type == COLOR-TYPE-GRAYSCALE:
