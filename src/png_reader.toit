@@ -86,7 +86,7 @@ class PngInfo extends PngScanner_:
 
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
-    uncompressed_ = image-data-is-uncompressed_ bytes --save-chunks: null
+    uncompressed_ = scan-uncompressed-image-data_ bytes --save-chunks --record-line-location=: null
 
   /**
   Returns true if the image data in the PNG is uncompressed, and all
@@ -132,14 +132,18 @@ class PngInfo extends PngScanner_:
 
 /**
 A PNG reader that gives random access to the decompressed pixel data.  Bit
-  widths other than 8 are expanded/truncated on demand.
+  widths smaller than 8 are expanded on demand.  See $get-indexed-image-data.
 
-Available formats are 8-bit palette (with alpha, and 32-bit RGBA.  Grayscale
-  and palette with 1/2/4 bits per pixel are delivered as 8-bit palette.
+Available image types formats are indexed (palette) and grayscale.
 
-The PNG must be uncompressed to give random access.  Such PNGs are created by
-  the pngunzip tool from this repository - see
-  https://github.com/toitware/toit-png-tools/releases.
+This class is intended for use with PNGs produced by the pngunzip tool in bin/.
+Such PNGs may have a compact representation, like 2 bits per pixel, but they
+are not compressed. Therefore we have random access to the pixel data. They are
+designed to be kept in flash and used for UI elements that are almost always in
+use.
+
+For UI elements that are large in number, but seldom in use it may be better to
+use the PngUncompressed class, which decompresses to RAM when it is used.
 */
 class PngRandomAccess extends PngScanner_:
   // A sequence of y-coordinates and file positions for uncompressed lines.
@@ -150,21 +154,15 @@ class PngRandomAccess extends PngScanner_:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
     process-bit-depth_ bit-depth color-type
-    uncompressed := image-data-is-uncompressed_ bytes: | y offset |
+    uncompressed := scan-uncompressed-image-data_ bytes --record-line-location=: | y offset |
       uncompressed-line-offsets_.add y
       uncompressed-line-offsets_.add offset
 
     if not uncompressed:
       throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
 
-  /**
-  The block is called with the arguments line-from, line-to, bits-per-pixel,
-    pixel-byte-array, line-stride.  bits-per-pixel is always 1 or 8
-  It may be called multiple times.  The byte array may be larger than
-    needed, and the caller should only use the first line-to - line-from..
-  The caller uses non-local return to stop the scan.
-  */
-  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
+  // See super.
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --need-gray-palette/bool [block] -> none:
     offsets := uncompressed-line-offsets_
     source-line-stride := byte-width + 1  // Because of the filter byte.
     // Although the PNG is uncompressed, the image data may not be contiguous
@@ -179,7 +177,7 @@ class PngRandomAccess extends PngScanner_:
       index := uncompressed-line-offsets_[i + 1] - top * source-line-stride
       source-slice-block :=: | y-from y-to |
         bytes[index + 1 + y-from * source-line-stride .. index + y-to * source-line-stride]
-      get-indexed-image-data-helper_ top bottom accept-8-bit source-line-stride gray-palette block source-slice-block
+      get-indexed-image-data-helper_ top bottom accept-8-bit source-line-stride need-gray-palette block source-slice-block
 
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
@@ -199,7 +197,7 @@ abstract class PngScanner_ extends AbstractPng:
     A non-trivial value for this makes the lines depend on each other and
     we cannot access them independently, so we return false in this case.
   */
-  image-data-is-uncompressed_ bytes/ByteArray --save-chunks/bool=false [block] -> bool:
+  scan-uncompressed-image-data_ bytes/ByteArray --save-chunks/bool=false [--record-line-location] -> bool:
     y := 0
     found-header := false
     literal-bytes-left-in-block := 0
@@ -224,7 +222,7 @@ abstract class PngScanner_ extends AbstractPng:
             return false  // Some zlib control bytes were chopped up.
           if literal-bytes-left-in-block != 0:
             // Record line position in PNG file.
-            block.call y (file-offset + chunk-pos)
+            record-line-location.call y (file-offset + chunk-pos)
 
             next-part-of-block := min (chunk.data.size - chunk-pos) literal-bytes-left-in-block
             if next-part-of-block % (byte-width + 1) != 0:
