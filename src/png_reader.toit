@@ -126,6 +126,57 @@ class PngInfo extends PngScanner_:
   get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
     unreachable
 
+/**
+A PNG reader that gives random access to the decompressed pixel data.  Bit
+  widths other than 8 are expanded/truncated on demand.
+
+Available formats are 8-bit palette (with alpha, and 32-bit RGBA.  Grayscale
+  and palette with 1/2/4 bits per pixel are delivered as 8-bit palette.
+
+The PNG must be uncompressed to give random access.  Such PNGs are created by
+  the pngunzip tool from this repository - see
+  https://github.com/toitware/toit-png-tools/releases.
+*/
+class PngRandomAccess extends PngScanner_:
+  // A sequence of y-coordinates and file positions for uncompressed lines.
+  // The uncompressed data includes a filter byte for each line, which
+  // must always be 0 (no predictor).
+  uncompressed-line-offsets_ := []
+
+  constructor bytes/ByteArray --filename/string?=null:
+    super bytes --filename=filename
+    process-bit-depth_ bit-depth color-type
+    uncompressed := image-data-is-uncompressed_ bytes: | y offset |
+      uncompressed-line-offsets_.add y
+      uncompressed-line-offsets_.add offset
+
+    if not uncompressed:
+      throw "PNG is not uncompressed" + (filename ? ": $filename" : "")
+
+  /**
+  The block is called with the arguments line-from, line-to, bits-per-pixel,
+    pixel-byte-array, line-stride.  bits-per-pixel is always 1 or 8
+  It may be called multiple times.  The byte array may be larger than
+    needed, and the caller should only use the first line-to - line-from..
+  The caller uses non-local return to stop the scan.
+  */
+  get-indexed-image-data line/int to-line/int --accept-8-bit/bool --gray-palette/bool [block] -> none:
+    offsets := uncompressed-line-offsets_
+    source-line-stride := byte-width + 1  // Because of the filter byte.
+    // Although the PNG is uncompressed, the image data may not be contiguous
+    // since the zlib blocks have a maximum size.  Find the correct block for
+    // the first line.
+    for i := 0; i < offsets.size; i += 2:
+      top := max line offsets[i]
+      bottom := min
+          to-line
+          i + 2 == offsets.size ? height : offsets[i + 2]
+      if top >= bottom: continue
+      index := uncompressed-line-offsets_[i + 1] - top * source-line-stride
+      source-slice-block :=: | y-from y-to |
+        bytes[index + 1 + y-from * source-line-stride .. index + y-to * source-line-stride]
+      get-indexed-image-data-helper_ top bottom accept-8-bit source-line-stride gray-palette block source-slice-block
+
 abstract class PngScanner_ extends AbstractPng:
   constructor bytes/ByteArray --filename/string?=null:
     super bytes --filename=filename
