@@ -51,6 +51,9 @@ main args/List:
               --multi
               --short-help="Preserve a named chunk."
               --type="string",
+          cli.OptionInt "max-literal-section"
+              --default=64000
+              --short-help="Maximum size of a zlib section (default: 64000).",
           cli.Option "override-chunk"
               --multi
               --short-help="Override a named chunk."
@@ -127,7 +130,8 @@ unzip parsed -> none:
 
   bytes-per-line := png.byte-width + 1
   // Avoid hitting the 64k limit on literal blocks.
-  lines-per-block := 64000 / bytes-per-line
+  lines-per-block := parsed["max-literal-section"] / bytes-per-line
+  if lines-per-block < 1: throw "max-literal-section too small"
   buffer := ByteArray (bytes-per-line * lines-per-block)
 
   lut := invert-bits ? (ByteArray 256: it ^ 0xff) : null
