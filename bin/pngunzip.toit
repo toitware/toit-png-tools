@@ -53,7 +53,7 @@ main args/List:
               --type="string",
           cli.OptionInt "max-literal-section"
               --default=64000
-              --short-help="Maximum size of a zlib section (default: 64000).",
+              --short-help="Maximum size of a zlib section.",
           cli.Option "override-chunk"
               --multi
               --short-help="Override a named chunk."
