@@ -70,7 +70,6 @@ jobs:
         shell: bash
         run: |
           make rebuild-cmake
-          cmake build
 
       - name: Build binaries
         shell: bash
