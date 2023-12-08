@@ -4,7 +4,8 @@
 
 cmake_minimum_required(VERSION 3.22)
 
-project(pngdiff)
+# NONE means skip testing the C compiler.
+project(pngdiff NONE)
 
 set(TOITRUN
     "toit.run${CMAKE_EXECUTABLE_SUFFIX}"
