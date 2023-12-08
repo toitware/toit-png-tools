@@ -45,12 +45,6 @@ jobs:
         with:
           toit-version: ${{ env.TOIT_VERSION }}
 
-      - uses: suisei-cn/actions-download-file@v1.4.0
-        name: Download Toit
-        with:
-          url: ${{ env.TOIT_SDK_URL }}
-          target: ${{ env.NATIVE_DOWNLOAD_DIR }}
-
       # Fetch the dependencies. Different for each platform.
       - name: Install dependencies - Linux
         if: runner.os == 'Linux'
