@@ -22,9 +22,6 @@ set(TOITC
     FILEPATH
     "The executable used to compile programs and check the syntax")
 
-set(TPKG_EXEC "toit.pkg${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to install the packages")
-set(TCOMPILE_EXEC "toit.compile${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to check the syntax")
-
 set(DEFAULT_SDK_VERSION CACHE STRING "The default SDK version to use")
 
 set(GIT_VERSION "$ENV{GIT_VERSION}")
