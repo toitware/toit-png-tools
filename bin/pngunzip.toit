@@ -6,14 +6,14 @@ import bitmap
 import cli
 import host.file
 import host.pipe
+import io show Reader
 import png-tools.png-reader show Png COLOR-TYPE-INDEXED COLOR-TYPE-GRAYSCALE
 import png-tools.png-writer show PngWriter
-import reader show BufferedReader
 import .version
 
 main args/List:
   root-cmd := cli.Command "pngunzip"
-      --long-help="""
+      --help="""
           Uncompress a PNG file.
 
           This can be used to create PNG files that don't use any
@@ -29,40 +29,40 @@ main args/List:
           cli.Flag "quiet"
               --short-name="q"
               --default=false
-              --short-help="Do not write messages to stderr, just return the exit code.",
+              --help="Do not write messages to stderr, just return the exit code.",
           cli.Option "out"
               --short-name="o"
               --default="-"
-              --short-help="Output (default: stdout)."
+              --help="Output (default: stdout)."
               --type="file",
           cli.Flag "version"
               --short-name="v"
               --default=false
-              --short-help="Print version and exit",
+              --help="Print version and exit",
           cli.Flag "debug-stack-traces"
               --short-name="d"
               --default=false
-              --short-help="Dump developer-friendly stack traces on error.",
+              --help="Dump developer-friendly stack traces on error.",
           cli.Flag "preserve"
               --short-name="p"
               --default=false
-              --short-help="Preserve all chunks",
+              --help="Preserve all chunks",
           cli.Option "preserve-chunk"
               --multi
-              --short-help="Preserve a named chunk."
+              --help="Preserve a named chunk."
               --type="string",
           cli.OptionInt "max-literal-section"
               --default=64000
-              --short-help="Maximum size of a zlib section.",
+              --help="Maximum size of a zlib section.",
           cli.Option "override-chunk"
               --multi
-              --short-help="Override a named chunk."
+              --help="Override a named chunk."
               --type="string",
           ]
       --rest=[
           cli.Option "file"
               --required
-              --short-help="PNG file input."
+              --help="PNG file input."
               --type="file",
           ]
       --run= :: unzip it
@@ -156,19 +156,17 @@ MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 
 slurp-file file-name/string --debug/bool -> Png:
   error := catch --unwind=debug:
-    reader := BufferedReader
-        file-name == "-" ?
-            pipe.stdin :
-            file.Stream.for-read file-name
-    reader.buffer-all
-    content := reader.read-bytes reader.buffered
-    png := Png content
+    reader/Reader := file-name == "-"
+        ? pipe.stdin.in
+        : (file.Stream.for-read file-name).in
+    contents := reader.read-all
+    png := Png contents
     return png
   if error:
     if error == "OUT_OF_BOUNDS":
-      pipe.stderr.write "$file-name: Broken PNG file.\n"
+      pipe.stderr.out.write "$file-name: Broken PNG file.\n"
     else:
-      pipe.stderr.write "$file-name: $error.\n"
+      pipe.stderr.out.write "$file-name: $error.\n"
     exit 1
   unreachable
 

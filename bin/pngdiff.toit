@@ -2,19 +2,18 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import binary show BIG-ENDIAN
+import io show BIG-ENDIAN Reader
 import bitmap
 import cli
 import host.file
 import host.pipe
-import reader show BufferedReader
 import png-tools.png-reader show PngRgba
 import png-tools.png-writer show PngWriter
 import .version
 
 main args/List:
   root-cmd := cli.Command "pngdiff"
-      --long-help="""
+      --help="""
           Compare two PNG files at the pixel level.
 
           This can be used to compare PNGs that have been compressed with
@@ -45,33 +44,33 @@ main args/List:
           cli.Flag "quiet"
               --short-name="q"
               --default=false
-              --short-help="Do not write messages to stderr, just return the exit code.",
+              --help="Do not write messages to stderr, just return the exit code.",
           cli.Option "out"
               --short-name="o"
               --default=null
-              --short-help="Output (default: no output file)."
+              --help="Output (default: no output file)."
               --type="file",
           cli.Flag "three-way"
               --short-name="t"
               --default=false
-              --short-help="Creates a three-way diff image, with the difference on top left, the first image in center, and the second image on the right.",
+              --help="Creates a three-way diff image, with the difference on top left, the first image in center, and the second image on the right.",
           cli.Flag "version"
               --short-name="v"
               --default=false
-              --short-help="Print version and exit",
+              --help="Print version and exit",
           cli.Flag "debug-stack-traces"
               --short-name="d"
               --default=false
-              --short-help="Dump developer-friendly stack traces on error.",
+              --help="Dump developer-friendly stack traces on error.",
           ]
       --rest=[
           cli.Option "file1"
               --required
-              --short-help="PNG file input 1."
+              --help="PNG file input 1."
               --type="file",
           cli.Option "file2"
               --default="-"
-              --short-help="PNG file input 2."
+              --help="PNG file input 2."
               --type="file",
           ]
       --run= :: diff it
@@ -215,18 +214,16 @@ MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 
 slurp-file file-name/string --debug/bool -> PngRgba:
   error := catch --unwind=debug:
-    reader := BufferedReader
-        file-name == "-" ?
-            pipe.stdin :
-            file.Stream.for-read file-name
-    reader.buffer-all
-    content := reader.read-bytes reader.buffered
-    png := PngRgba content
+    reader/Reader := file-name == "-"
+        ? pipe.stdin.in
+        : (file.Stream.for-read file-name).in
+    contents := reader.read-all
+    png := PngRgba contents
     return png
   if error:
     if error == "OUT_OF_BOUNDS":
-      pipe.stderr.write "$file-name: Broken PNG file.\n"
+      pipe.stderr.out.write "$file-name: Broken PNG file.\n"
     else:
-      pipe.stderr.write "$file-name: $error.\n"
+      pipe.stderr.out.write "$file-name: $error.\n"
     exit 1
   unreachable

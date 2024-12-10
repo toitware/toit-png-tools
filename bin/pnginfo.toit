@@ -5,15 +5,15 @@
 import cli
 import host.file
 import host.pipe
+import io show Reader
 import encoding.json
-import reader show BufferedReader
 import png-tools.png-reader show *
 import png-tools.png-writer show PngWriter
 import .version
 
 main args/List:
   root-cmd := cli.Command "pnginfo"
-      --long-help="""
+      --help="""
           Print information about a PNG file.
 
           The exit code can be used to check if the PNG file is readable.
@@ -28,51 +28,51 @@ main args/List:
           cli.Option "out"
               --short-name="o"
               --default="-"
-              --short-help="Output (default: stdout)."
+              --help="Output (default: stdout)."
               --type="file",
           cli.Flag "version"
               --short-name="v"
               --default=false
-              --short-help="Print version and exit.",
+              --help="Print version and exit.",
           cli.Flag "json"
               --short-name="j"
               --default=false
-              --short-help="Print information in JSON format.",
+              --help="Print information in JSON format.",
           cli.Flag "width"
               --short-name="w"
               --default=false
-              --short-help="Print the width of the image in pixels, and nothing else.",
+              --help="Print the width of the image in pixels, and nothing else.",
           cli.Flag "height"
               --short-name="h"
               --default=false
-              --short-help="Print the width of the image in pixels, and nothing else.",
+              --help="Print the width of the image in pixels, and nothing else.",
           cli.Option "chunk"
               --short-name="c"
               --default=null
-              --short-help="Dump the contents of the named chunk and nothing else."
+              --help="Dump the contents of the named chunk and nothing else."
               --type="string",
           cli.Flag "all-chunks"
               --short-name="a"
               --default=false
-              --short-help="Dump the contents of all non-required chunks.",
+              --help="Dump the contents of all non-required chunks.",
           cli.Flag "random-access"
               --short-name="r"
               --default=false
-              --short-help="Print whether the PNG file has uncompressed random access pixel data.",
+              --help="Print whether the PNG file has uncompressed random access pixel data.",
           cli.Flag "show-image-data"
               --short-name="s"
               --default=false
-              --short-help="Use terminal graphics to show the image data.",
+              --help="Use terminal graphics to show the image data.",
           cli.Flag "debug-stack-traces"
               --short-name="d"
               --default=false
-              --short-help="Dump developer-friendly stack traces on error.",
+              --help="Dump developer-friendly stack traces on error.",
           ]
       --rest=[
           cli.Option "file"
               --required
               --multi
-              --short-help="PNG file input."
+              --help="PNG file input."
               --type="file",
           ]
       --run= :: dump it
@@ -288,19 +288,17 @@ show-image-data png/PngRgba out-stream -> none:
 
 slurp-file file-name/string --debug/bool --include-image-data/bool=false -> List:
   error := catch --unwind=debug:
-    reader := BufferedReader
-        file-name == "-" ?
-            pipe.stdin :
-            file.Stream.for-read file-name
-    reader.buffer-all
-    content := reader.read-bytes reader.buffered
-    info := PngInfo content
+    reader/Reader := file-name == "-"
+        ? pipe.stdin.in
+        : (file.Stream.for-read file-name).in
+    contents := reader.read-all
+    info := PngInfo contents
     if not include-image-data: return [info]
-    return [info, PngRgba content]
+    return [info, PngRgba contents]
   if error:
     if error == "OUT_OF_BOUNDS":
-      pipe.stderr.write "$file-name: Broken PNG file.\n"
+      pipe.stderr.out.write "$file-name: Broken PNG file.\n"
     else:
-      pipe.stderr.write "$file-name: $error.\n"
+      pipe.stderr.out.write "$file-name: $error.\n"
     exit 1
   unreachable

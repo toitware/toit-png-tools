@@ -2,9 +2,7 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import binary
-import binary show BIG-ENDIAN byte-swap-32
-import bytes show Buffer
+import io show BIG-ENDIAN Buffer ByteOrder
 import crypto.crc show *
 import monitor show Latch
 import .png-reader
@@ -65,7 +63,7 @@ class PngWriter:
 
   static byte-swap_ ba/ByteArray -> ByteArray:
     result := ba.copy
-    binary.byte-swap_32 result
+    ByteOrder.swap-32 result
     return result
 
   write-function:
