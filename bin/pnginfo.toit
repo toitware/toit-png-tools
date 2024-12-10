@@ -5,7 +5,7 @@
 import cli
 import host.file
 import host.pipe
-import io show Reader
+import io show CloseableReader
 import encoding.json
 import png-tools.png-reader show *
 import png-tools.png-writer show PngWriter
@@ -288,10 +288,11 @@ show-image-data png/PngRgba out-stream -> none:
 
 slurp-file file-name/string --debug/bool --include-image-data/bool=false -> List:
   error := catch --unwind=debug:
-    reader/Reader := file-name == "-"
+    reader/CloseableReader := file-name == "-"
         ? pipe.stdin.in
         : (file.Stream.for-read file-name).in
     contents := reader.read-all
+    reader.close
     info := PngInfo contents
     if not include-image-data: return [info]
     return [info, PngRgba contents]

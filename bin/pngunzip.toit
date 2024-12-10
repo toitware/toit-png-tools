@@ -6,7 +6,7 @@ import bitmap
 import cli
 import host.file
 import host.pipe
-import io show Reader
+import io show CloseableReader
 import png-tools.png-reader show Png COLOR-TYPE-INDEXED COLOR-TYPE-GRAYSCALE
 import png-tools.png-writer show PngWriter
 import .version
@@ -156,10 +156,11 @@ MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 
 slurp-file file-name/string --debug/bool -> Png:
   error := catch --unwind=debug:
-    reader/Reader := file-name == "-"
+    reader/CloseableReader := file-name == "-"
         ? pipe.stdin.in
         : (file.Stream.for-read file-name).in
     contents := reader.read-all
+    reader.close
     png := Png contents
     return png
   if error:

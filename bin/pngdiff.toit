@@ -2,7 +2,7 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import io show BIG-ENDIAN Reader
+import io show BIG-ENDIAN CloseableReader
 import bitmap
 import cli
 import host.file
@@ -214,10 +214,11 @@ MAX-OUT := ByteArray 0x100: it == 0 ? 0 : 0xff
 
 slurp-file file-name/string --debug/bool -> PngRgba:
   error := catch --unwind=debug:
-    reader/Reader := file-name == "-"
+    reader/CloseableReader := file-name == "-"
         ? pipe.stdin.in
         : (file.Stream.for-read file-name).in
     contents := reader.read-all
+    reader.close
     png := PngRgba contents
     return png
   if error:
