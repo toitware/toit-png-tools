@@ -2,7 +2,7 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import binary show BIG-ENDIAN byte-swap-32 LITTLE-ENDIAN
+import io show BIG-ENDIAN LITTLE-ENDIAN
 import bitmap
 import bitmap show blit bytemap-zap
 import bytes show Buffer
@@ -569,7 +569,7 @@ abstract class PngDecompressor_ extends AbstractPng:
       else if chunk.name == "IEND":
         if pos != bytes.size:
           throw "Trailing data after IEND" + (filename ? ": $filename" : "")
-        decompressor_.close
+        decompressor_.out.close
         done.get
         break
       else if chunk.name[0] & 0x20 == 0:
@@ -578,11 +578,11 @@ abstract class PngDecompressor_ extends AbstractPng:
   handle-image-data chunk/Chunk:
     bytes-written := 0
     while bytes-written != chunk.data.size:
-      bytes-written += decompressor_.write chunk.data[bytes-written..]
+      bytes-written += decompressor_.out.write chunk.data[bytes-written..]
 
   write-image-data:
-    reader := reader.BufferedReader decompressor_.reader
-    for y := 0; reader.can-ensure (byte-width + 1); y++:
+    reader := decompressor_.in
+    for y := 0; reader.try-ensure-buffered (byte-width + 1); y++:
       data := reader.read-bytes (byte-width + 1)
       filter := data[0]
       line := data.copy 1

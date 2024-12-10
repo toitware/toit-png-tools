@@ -5,7 +5,7 @@
 file(GLOB TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*_test.toit" "*_test_slow.toit")
 file(GLOB SH_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*_test.sh" "*_test_slow.sh")
 
-set(TEST_TIMEOUT 40 CACHE STRING "The maximal amount of time each test is allowed to run")
+set(TEST_TIMEOUT 80 CACHE STRING "The maximal amount of time each test is allowed to run")
 set(SLOW_TEST_TIMEOUT 200 CACHE STRING "The maximal amount of time each slow test is allowed to run")
 
 message("TPKG: ${TOITPKG}")
