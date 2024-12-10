@@ -1,4 +1,4 @@
 name: png-tools
 description: Tools for manipulating PNGs, written in Toit.
 environment:
-  sdk: ^2.0.0-alpha.119
+  sdk: ^2.0.0-alpha.174
