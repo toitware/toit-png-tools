@@ -1,4 +1,4 @@
-sdk: ^2.0.0-alpha.92
+sdk: ^2.0.0-alpha.144
 prefixes:
   cli: pkg-cli
   host: pkg-host
@@ -10,18 +10,28 @@ packages:
   pkg-cli:
     url: github.com/toitlang/pkg-cli
     name: cli
-    version: 1.2.0
-    hash: 0e2adab3ab434c597be60438ccf64008f703ad9c
+    version: 1.8.0
+    hash: 73c8aabb60a6f5f304566a1e781d7b025aa17e9b
+    prefixes:
+      fs: pkg-fs
+      host: pkg-host
+  pkg-fs:
+    url: github.com/toitlang/pkg-fs
+    name: fs
+    version: 2.3.1
+    hash: 60836d4500317af2093d59d50c117d612c33f1fa
+    prefixes:
+      host: pkg-host
   pkg-host:
     url: github.com/toitlang/pkg-host
     name: host
-    version: 1.9.0
-    hash: 76e4dc5328a5c3739e97f65ed196d05058071359
+    version: 1.15.3
+    hash: 62393e8522b77eafbafe60b9817935266117daf6
   toit-pixel-display:
     url: github.com/toitware/toit-pixel-display
     name: pixel_display
-    version: 1.6.1
-    hash: 61693447fcf73e7dd4044780fd7991c2d371b7ec
+    version: 1.7.1
+    hash: 09bc1b6cf0ae52385af5301a13935a06683a36cf
   toit-png-display:
     url: github.com/toitware/toit-png-display
     name: png_display

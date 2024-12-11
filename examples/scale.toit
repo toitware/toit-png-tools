@@ -2,7 +2,7 @@
 // Use of this source code is governed by a Zero-Clause BSD license that can
 // be found in the EXAMPLES_LICENSE file.
 
-import binary show BIG-ENDIAN
+import io show BIG-ENDIAN
 import cli
 import host.file
 import host.directory show *
@@ -13,7 +13,7 @@ import zlib
 
 main args/List -> int:
   cmd := cli.Command "scale"
-      --long-help="""
+      --help="""
         Scales PNG files without introducing anti-aliasing artefacts.
 
         Can only scale by integer reductions.
@@ -21,16 +21,16 @@ main args/List -> int:
         Always writes 32bits-per-pixel RGBA PNGs.
         """
       --options=[
-          cli.OptionInt "reduction" --short-help="Factor to scale down" --default=4
+          cli.OptionInt "reduction" --help="Factor to scale down" --default=4
       ]
       --rest=[
-          cli.OptionString "input"
+          cli.Option "input"
               --type="file"
-              --short-help="The input PNG file"
+              --help="The input PNG file"
               --required,
-          cli.OptionString "output"
+          cli.Option "output"
               --type="file"
-              --short-help="The output PNG file"
+              --help="The output PNG file"
               --required,
       ]
       --run=::
@@ -89,7 +89,7 @@ scale_ png/png-reader.Png x-scale/int y-scale/int out-width/int out-height/int -
   return result
 
 write-png_ fd/file.Stream buffer/ByteArray width/int height/int:
-  fd.write png-display.PngDriver_.HEADER
+  fd.out.write png-display.PngDriver_.HEADER
   ihdr := #[
     0, 0, 0, 0,          // Width.
     0, 0, 0, 0,          // Height.
@@ -107,8 +107,8 @@ write-png_ fd/file.Stream buffer/ByteArray width/int height/int:
       line.replace 1 buffer[y * width * 4..(y + 1) * width * 4]
       idx := 0
       while idx < line.size:
-        idx += compressor.write line[idx..]
-    compressor.close
-  while data := compressor.reader.read:
+        idx += compressor.out.write line[idx..]
+    compressor.out.close
+  while data := compressor.in.read:
     png-display.PngDriver_.write-chunk fd "IDAT" data
   png-display.PngDriver_.write-chunk fd "IEND" #[]  // End chunk.
