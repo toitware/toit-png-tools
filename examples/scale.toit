@@ -42,7 +42,7 @@ scale parsed/cli.Parsed:
   input := parsed["input"]
   output:= parsed["output"]
 
-  png-bytes := file.read-content input
+  png-bytes := file.read-contents input
   png := png-reader.Png png-bytes --filename=input
   print png
 

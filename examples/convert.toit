@@ -47,7 +47,7 @@ main:
   compress "chrome.png"
 
 compress filename -> none:
-  png-bytes := file.read-content filename
+  png-bytes := file.read-contents filename
   png := png-reader.Png png-bytes --filename=filename
   print png
   map := {:}

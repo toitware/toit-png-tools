@@ -1,6 +1,6 @@
 dependencies:
   host:
     url: github.com/toitlang/pkg-host
-    version: ^1.9.0
+    version: ^1.15.3
   png-tools:
     path: ..

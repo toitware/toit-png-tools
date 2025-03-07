@@ -15,6 +15,6 @@ main:
       print "$counter: $filename"
       counter++
       path := "tests/third_party/pictogrammers/compressed/$filename"
-      png-bytes := file.read-content path
+      png-bytes := file.read-contents path
       png := Png png-bytes --filename=path
       print png
