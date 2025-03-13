@@ -1,4 +1,4 @@
-sdk: ^2.0.0-alpha.64
+sdk: ^2.0.0-alpha.144
 prefixes:
   host: pkg-host
   png-tools: ..
@@ -8,5 +8,5 @@ packages:
   pkg-host:
     url: github.com/toitlang/pkg-host
     name: host
-    version: 1.9.0
-    hash: 76e4dc5328a5c3739e97f65ed196d05058071359
+    version: 1.15.3
+    hash: 62393e8522b77eafbafe60b9817935266117daf6

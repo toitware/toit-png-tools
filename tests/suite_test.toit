@@ -20,7 +20,7 @@ main:
       print "$counter: $filename"
       counter++
       path := "tests/third_party/pngsuite/png/$filename"
-      png-bytes := file.read-content path
+      png-bytes := file.read-contents path
       png := PngRgba png-bytes --filename=path
       print png
       root := filename[..filename.size - 4]
@@ -28,7 +28,7 @@ main:
       if not file.is-file json-file:
         continue  // No JSON file
       truncate := root.ends-with "16"
-      json-in := file.read-content json-file
+      json-in := file.read-contents json-file
       parsed := json.parse json-in.to-string
       expect parsed is List
       byte-array := ByteArray parsed.size: truncate ? (parsed[it] >> 8) : parsed[it]
