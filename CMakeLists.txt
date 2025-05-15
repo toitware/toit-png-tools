@@ -7,21 +7,11 @@ cmake_minimum_required(VERSION 3.22)
 # NONE means skip testing the C compiler.
 project(pngdiff NONE)
 
-set(TOITRUN
-    "toit.run${CMAKE_EXECUTABLE_SUFFIX}"
+set(TOIT
+    "toit${CMAKE_EXECUTABLE_SUFFIX}"
     CACHE
     FILEPATH
-    "The executable used to run programs")
-set(TOITPKG
-    "toit.pkg${CMAKE_EXECUTABLE_SUFFIX}"
-    CACHE
-    FILEPATH
-    "The executable used to install packages")
-set(TOITC
-    "toit.compile${CMAKE_EXECUTABLE_SUFFIX}"
-    CACHE
-    FILEPATH
-    "The executable used to compile programs and check the syntax")
+    "The executable used to run, compile programs and install packages")
 
 set(DEFAULT_SDK_VERSION CACHE STRING "The default SDK version to use")
 

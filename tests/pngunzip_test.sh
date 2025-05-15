@@ -4,7 +4,7 @@ set -e
 
 mkdir -p tests/out
 
-TOITRUN=$1
+TOIT=$1
 
 ./build/pngunzip --version foo
 
