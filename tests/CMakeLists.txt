@@ -8,10 +8,9 @@ file(GLOB SH_TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*_test.sh" "*_test_slow
 set(TEST_TIMEOUT 80 CACHE STRING "The maximal amount of time each test is allowed to run")
 set(SLOW_TEST_TIMEOUT 200 CACHE STRING "The maximal amount of time each slow test is allowed to run")
 
-message("TPKG: ${TOITPKG}")
 add_custom_target(
   "install-test-pkgs"
-  COMMAND "${TOITPKG}" install
+  COMMAND "${TOIT}" pkg install
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
@@ -38,7 +37,7 @@ foreach(file ${TESTS})
 
   add_test(
     NAME "${test_name}"
-    COMMAND "${TOITRUN}" "tests/${file}"
+    COMMAND "${TOIT}" run "tests/${file}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
   )
 
@@ -61,7 +60,7 @@ foreach(file ${SH_TESTS})
 
   add_test(
     NAME "${test_name}"
-    COMMAND "bash" "tests/${file}" "${TOITRUN}"
+    COMMAND "bash" "tests/${file}" "${TOIT}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
   )
 

@@ -12,13 +12,13 @@ if (DEFINED EXECUTING_SCRIPT)
     if (NOT DEFINED TOIT_PROJECT)
       message(FATAL_ERROR "Missing TOIT_PROJECT")
     endif()
-    if (NOT DEFINED TOITPKG)
-      message(FATAL_ERROR "Missing TOITPKG")
+    if (NOT DEFINED TOIT)
+      message(FATAL_ERROR "Missing TOIT")
     endif()
 
     if (EXISTS "${TOIT_PROJECT}/package.yaml" OR EXISTS "${TOIT_PROJECT}/package.lock")
       execute_process(
-        COMMAND "${TOITPKG}" install --auto-sync=false "--project-root=${TOIT_PROJECT}"
+        COMMAND "${TOIT}" pkg install --auto-sync=false "--project-root=${TOIT_PROJECT}"
         COMMAND_ERROR_IS_FATAL ANY
       )
     endif()
@@ -32,12 +32,12 @@ endif()
 
 # Creates a custom command to build ${TARGET} with correct dependencies.
 function(ADD_TOIT_SNAPSHOT SOURCE TARGET DEP_FILE ENV)
-  if (NOT DEFINED TOITC)
-    set(TOITC "$ENV{TOITC}")
-    if ("${TOITC}" STREQUAL "")
-      # TOITC is normally set to the toit.compile executable.
+  if (NOT DEFINED TOIT)
+    set(TOIT "$ENV{TOIT}")
+    if ("${TOIT}" STREQUAL "")
+      # TOIT is normally set to the toit executable.
       # However, for cross-compilation the compiler must be provided manually.
-      message(FATAL_ERROR "TOITC not provided")
+      message(FATAL_ERROR "TOIT not provided")
     endif()
   endif()
   if(POLICY CMP0116)
@@ -47,18 +47,24 @@ function(ADD_TOIT_SNAPSHOT SOURCE TARGET DEP_FILE ENV)
     OUTPUT "${TARGET}"
     DEPFILE ${DEP_FILE}
     DEPENDS download_packages "${SOURCE}"
-    COMMAND ${CMAKE_COMMAND} -E env ${ENV} ASAN_OPTIONS=detect_leaks=false "${TOITC}" --dependency-file "${DEP_FILE}" --dependency-format ninja -w "${TARGET}" "${SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -E env ${ENV} ASAN_OPTIONS=detect_leaks=false
+        "${TOIT}" compile
+        --snapshot
+        --dependency-file "${DEP_FILE}"
+        --dependency-format ninja
+        -o "${TARGET}"
+        "${SOURCE}"
   )
 endfunction(ADD_TOIT_SNAPSHOT)
 
 # Creates a custom command to build ${TARGET} with correct dependencies.
 function(ADD_TOIT_EXE SOURCE TARGET DEP_FILE ENV)
-  if (NOT DEFINED TOITC)
-    set(TOITC "$ENV{TOITC}")
-    if ("${TOITC}" STREQUAL "")
-      # TOITC is normally set to the toit.compile executable.
+  if (NOT DEFINED TOIT)
+    set(TOITC "$ENV{TOIT}")
+    if ("${TOIT}" STREQUAL "")
+      # TOIT is normally set to the toit executable.
       # However, for cross-compilation the compiler must be provided manually.
-      message(FATAL_ERROR "TOITC not provided")
+      message(FATAL_ERROR "TOIT not provided")
     endif()
   endif()
   if(POLICY CMP0116)
@@ -68,17 +74,22 @@ function(ADD_TOIT_EXE SOURCE TARGET DEP_FILE ENV)
     OUTPUT "${TARGET}"
     DEPFILE ${DEP_FILE}
     DEPENDS download_packages "${SOURCE}"
-    COMMAND ${CMAKE_COMMAND} -E env ${ENV} ASAN_OPTIONS=detect_leaks=false "${TOITC}" --dependency-file "${DEP_FILE}" --dependency-format ninja -o "${TARGET}" "${SOURCE}"
+    COMMAND ${CMAKE_COMMAND} -E env ${ENV} ASAN_OPTIONS=detect_leaks=false
+        "${TOIT}" compile
+        --dependency-file "${DEP_FILE}"
+        --dependency-format ninja
+        -o "${TARGET}"
+        "${SOURCE}"
   )
 endfunction(ADD_TOIT_EXE)
 
 macro(toit_project NAME PATH)
-  if (NOT DEFINED TOITPKG)
-    set(TOITPKG "$ENV{TOITPKG}")
-    if ("${TOITPKG}" STREQUAL "")
-      # TOITPKG is normally set to the toit.pkg executable.
+  if (NOT DEFINED TOIT)
+    set(TOIT "$ENV{TOIT}")
+    if ("${TOIT}" STREQUAL "")
+      # TOIT is normally set to the toit executable.
       # However, for cross-compilation the compiler must be provided manually.
-      message(FATAL_ERROR "TOITPKG not provided")
+      message(FATAL_ERROR "TOIT not provided")
     endif()
   endif()
 
@@ -88,7 +99,7 @@ macro(toit_project NAME PATH)
     )
     add_custom_target(
       sync_packages
-      COMMAND "${TOITPKG}" sync
+      COMMAND "${TOIT}" pkg sync
     )
   endif()
 
@@ -99,7 +110,7 @@ macro(toit_project NAME PATH)
         -DEXECUTING_SCRIPT=true
         -DSCRIPT_COMMAND=install_packages
         "-DTOIT_PROJECT=${PATH}"
-        "-DTOITPKG=${TOITPKG}"
+        "-DTOIT=${TOIT}"
         -P "${TOIT_DOWNLOAD_PACKAGE_SCRIPT}"
   )
   add_dependencies(download_packages "${DOWNLOAD_TARGET_NAME}")

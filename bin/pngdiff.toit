@@ -91,7 +91,7 @@ diff parsed -> none:
       throw "Must specify at least one file"
   if error:
     if not quiet:
-      pipe.stderr.write "$error\n"
+      pipe.stderr.out.write "$error\n"
     exit 1
 
   png1 := slurp-file file1-name --debug=debug
@@ -99,9 +99,10 @@ diff parsed -> none:
 
   if png1.width != png2.width or png1.height != png2.height:
     if not quiet:
-      pipe.stderr.write "Different sizes:\n"
-      pipe.stderr.write "  $file1-name: $(png1.width)x$(png1.height)\n"
-      pipe.stderr.write "  $file2-name: $(png2.width)x$(png2.height)\n"
+      writer := pipe.stderr.out
+      writer.write "Different sizes:\n"
+      writer.write "  $file1-name: $(png1.width)x$(png1.height)\n"
+      writer.write "  $file2-name: $(png2.width)x$(png2.height)\n"
     exit 1
 
   if png1.image-data == png2.image-data:
@@ -123,9 +124,10 @@ diff parsed -> none:
           alpha2 := line2[x + 3]
           pixel2 := BIG-ENDIAN.uint24 line2 x
           if pixel1 != pixel2 or alpha1 != alpha2:
-            pipe.stderr.write "Different pixels at $(x / 4), $y:\n"
-            pipe.stderr.write "  $file1-name: $(%06x pixel1) (alpha $(%02x alpha1))\n"
-            pipe.stderr.write "  $file2-name: $(%06x pixel2) (alpha $(%02x alpha2))\n"
+            writer := pipe.stderr.out
+            writer.write "Different pixels at $(x / 4), $y:\n"
+            writer.write "  $file1-name: $(%06x pixel1) (alpha $(%02x alpha1))\n"
+            writer.write "  $file2-name: $(%06x pixel2) (alpha $(%02x alpha2))\n"
           break
 
   if not parsed["out"]:

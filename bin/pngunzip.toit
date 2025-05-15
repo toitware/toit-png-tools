@@ -75,9 +75,10 @@ unzip parsed -> none:
 
   overridden-chunks := parse-overrides parsed["override-chunk"]
   if not overridden-chunks:
-    pipe.stderr.write "Invalid override chunk.\n"
-    pipe.stderr.write "  Format: --override-chunk=NAME=VALUE\n"
-    pipe.stderr.write "  Format: --override-chunk=NAME=#[0x00, 0x01, 0x02]\n"
+    writer := pipe.stderr.out
+    writer.write "Invalid override chunk.\n"
+    writer.write "  Format: --override-chunk=NAME=VALUE\n"
+    writer.write "  Format: --override-chunk=NAME=#[0x00, 0x01, 0x02]\n"
     exit 1
 
   file-name := parsed["file"]
