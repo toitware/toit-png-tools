@@ -96,7 +96,7 @@ jobs:
         run: |
           rm -Recurse -Force ${{ github.workspace }}\*
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: binaries-Windows
           path: in
@@ -144,7 +144,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: binaries-macOS
           path: in
