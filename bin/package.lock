@@ -1,4 +1,4 @@
-sdk: ^2.0.0-alpha.170
+sdk: ^2.0.0-alpha.189
 prefixes:
   cli: pkg-cli
   host: pkg-host
