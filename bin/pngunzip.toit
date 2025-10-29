@@ -186,9 +186,9 @@ parse-overrides overrides/List -> Map?:
         byte-string := it.trim
         byte := ?
         if byte-string.starts-with "0x" or byte-string.starts-with "0X":
-          byte = int.parse --radix=16 byte-string[2..] --on-error=: return null
+          byte = int.parse --radix=16 byte-string[2..] --if-error=: return null
         else:
-          byte = int.parse byte-string --on-error=: return null
+          byte = int.parse byte-string --if-error=: return null
         if not 0 <= byte < 256: return null
         byte  // Return value of block.
       result[name] = ByteArray bytes.size: bytes[it]
